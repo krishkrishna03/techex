@@ -3,7 +3,7 @@ const router = express.Router();
 const { auth, authorize } = require('../middleware/auth');
 const User = require('../models/User');
 const { body, validationResult } = require('express-validator');
-const { notifyAdmins } = require('../utils/websocketService');
+// WebSocket notifications removed for profile route to simplify deployment
 const emailService = require('../utils/emailService');
 const bcrypt = require('bcryptjs');
 
@@ -104,12 +104,7 @@ router.put('/profile', auth, authorize('master_admin'), [
       ]);
     }
 
-    // Notify through WebSocket
-    notifyAdmins({
-      type: 'profile_update',
-      message: 'Master Admin profile has been updated',
-      timestamp: new Date()
-    });
+    // WebSocket notification intentionally removed.
 
     res.json({
       message: 'Profile updated successfully',
