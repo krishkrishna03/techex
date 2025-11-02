@@ -1,0 +1,32 @@
+[
+  {
+    "questionText": "What is the capital of France?",
+    "options": {
+      "A": "London",
+      "B": "Paris",
+      "C": "Berlin",
+      "D": "Madrid"
+    },
+    "correctAnswer": "B"
+  },
+  {
+    "questionText": "Which programming language is known for web development?",
+    "options": {
+      "A": "Python",
+      "B": "Java",
+      "C": "JavaScript",
+      "D": "C++"
+    },
+    "correctAnswer": "C"
+  },
+  {
+    "questionText": "What is 2 + 2?",
+    "options": {
+      "A": "3",
+      "B": "4",
+      "C": "5",
+      "D": "6"
+    },
+    "correctAnswer": "B"
+  }
+]
