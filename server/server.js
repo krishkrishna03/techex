@@ -106,16 +106,15 @@ app.use((err, req, res, next) => {
 
 const http = require('http');
 const server = http.createServer(app);
-const { initializeWebSocket } = require('./utils/websocketService');
 
+
+// WebSocket initialization removed to simplify server startup when sockets are not required
 // Initialize WebSocket
-const io = initializeWebSocket(server);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log('📡 WebSocket server initialized');
 });
 
 module.exports = app;
