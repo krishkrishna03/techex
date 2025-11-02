@@ -69,7 +69,6 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/faculty', require('./routes/faculty'));
 app.use('/api/coding', require('./routes/coding'));
-app.use('/api/settings', require('./routes/settings'));
 app.use('/api/profile', require('./routes/profile'));
 app.use('/api/coding-questions', require('./routes/codingQuestions'));
 
