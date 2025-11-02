@@ -1,0 +1,13 @@
+{"timestamp":"2025-10-24T03:22:17.366Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-24T03:22:17.376Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-24T03:49:57.918Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-24T03:49:57.937Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-24T03:50:44.447Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-24T03:50:44.456Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-29T11:49:13.041Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-29T11:49:13.058Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-10-29T11:58:52.825Z","level":"WARN","message":"Login failed - invalid password","email":"bobbysarath006@gmail.com","userId":"68e377674ca3ead847bbb057"}
+{"timestamp":"2025-11-01T06:36:39.524Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-11-01T06:36:39.551Z","level":"WARN","message":"Authentication failed - invalid token","error":"jwt expired","ip":"::1"}
+{"timestamp":"2025-11-01T06:37:00.526Z","level":"WARN","message":"Login failed - user not found","email":"mvgradmin@gmail.com"}
+{"timestamp":"2025-11-01T06:37:16.638Z","level":"WARN","message":"Login failed - user not found","email":"mvgradmin@gmail.com"}
