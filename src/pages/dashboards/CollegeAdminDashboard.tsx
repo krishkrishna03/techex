@@ -344,23 +344,39 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
     }
   };
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<{ id: string; name: string; role: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   const handleDeleteUser = async (userId: string, userName: string, currentRole: string) => {
-    if (!confirm(`Are you sure you want to delete ${userName}? This action cannot be undone.`)) {
-      return;
-    }
+    setUserToDelete({ id: userId, name: userName, role: currentRole });
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
 
     try {
-      await apiService.deleteUser(userId);
+      setDeleteLoading(true);
+      await apiService.deleteUser(userToDelete.id);
+
+      // Show success message
+      alert(`Successfully deleted ${userToDelete.role}: ${userToDelete.name}`);
 
       // Reload data
       loadDashboardData();
-      if (currentRole === 'faculty') {
+      if (userToDelete.role === 'faculty') {
         loadFaculty();
       } else {
         loadStudents();
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to delete user');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
+      setError(`Failed to delete ${userToDelete.name}: ${errorMessage}`);
+    } finally {
+      setDeleteLoading(false);
+      setShowDeleteConfirm(false);
+      setUserToDelete(null);
     }
   };
 
@@ -1059,6 +1075,52 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
           onSubmit={handleBulkUpload} 
           onClose={() => setShowBulkUpload(false)}
         />
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => {
+          setShowDeleteConfirm(false);
+          setUserToDelete(null);
+        }}
+        title="Confirm Delete"
+        size="sm"
+      >
+        <div className="p-6">
+          <p className="mb-4 text-gray-700">
+            Are you sure you want to delete {userToDelete?.name}? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setUserToDelete(null);
+              }}
+              className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+              disabled={deleteLoading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDelete}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 size={16} />
+                  Delete
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
