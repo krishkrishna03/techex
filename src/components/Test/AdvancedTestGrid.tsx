@@ -286,7 +286,9 @@ const AdvancedTestGrid: React.FC<AdvancedTestGridProps> = ({
             ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
             : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
         }`}>
-          {filteredTests.map((test) => (
+          {filteredTests
+            .filter(test => test && test._id) // Filter out any null or invalid tests
+            .map((test) => (
             <AdvancedTestCard
               key={test._id}
               test={test}
