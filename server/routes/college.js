@@ -434,21 +434,42 @@ router.get('/users/sample-template/:role', auth, authorize('college_admin'), (re
 });
 
 // Get all faculty/students for college (College Admin only)
+// Supports optional pagination via query params: ?page=1&limit=50
 router.get('/users/:role', auth, authorize('college_admin'), async (req, res) => {
   try {
     const { role } = req.params;
-    
+    const page = parseInt(req.query.page) || null;
+    const limit = parseInt(req.query.limit) || null;
+
     if (!['faculty', 'student'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
-    const users = await User.find({
+    const query = {
       collegeId: req.user.collegeId,
       role,
       isActive: true
-    })
-    .select('-password')
-    .sort({ createdAt: -1 });
+    };
+
+    // If pagination requested, return paginated response with metadata
+    if (page && limit) {
+      const skip = (page - 1) * limit;
+      const [total, users] = await Promise.all([
+        User.countDocuments(query),
+        User.find(query)
+          .select('-password')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+      ]);
+
+      return res.json({ users, total, page, limit });
+    }
+
+    // Fallback: return full list (existing behavior)
+    const users = await User.find(query)
+      .select('-password')
+      .sort({ createdAt: -1 });
 
     res.json(users);
   } catch (error) {
@@ -823,9 +844,12 @@ router.get('/sections', auth, authorize('college_admin', 'faculty'), async (req,
 });
 
 // Get students based on filters
+// Supports optional pagination via ?page=1&limit=50
 router.get('/students', auth, authorize('college_admin', 'faculty'), async (req, res) => {
   try {
     const { branch, batch, section, search } = req.query;
+    const page = parseInt(req.query.page) || null;
+    const limit = parseInt(req.query.limit) || null;
 
     let query = {
       collegeId: req.user.collegeId,
@@ -843,6 +867,20 @@ router.get('/students', auth, authorize('college_admin', 'faculty'), async (req,
         { email: { $regex: search, $options: 'i' } },
         { idNumber: { $regex: search, $options: 'i' } }
       ];
+    }
+
+    if (page && limit) {
+      const skip = (page - 1) * limit;
+      const [total, students] = await Promise.all([
+        User.countDocuments(query),
+        User.find(query)
+          .select('_id name email idNumber branch batch section')
+          .sort({ name: 1 })
+          .skip(skip)
+          .limit(limit)
+      ]);
+
+      return res.json({ students, total, page, limit });
     }
 
     const students = await User.find(query)
