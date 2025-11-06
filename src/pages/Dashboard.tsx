@@ -148,6 +148,7 @@ const Dashboard: React.FC = () => {
           <Navbar
             title={getDashboardTitle()}
             onProfileClick={() => setShowProfile(true)}
+            onTabChange={setActiveTab}
           />
         )}
 
