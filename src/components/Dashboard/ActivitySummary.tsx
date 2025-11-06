@@ -3,7 +3,13 @@ import { Users } from 'lucide-react';
 import io from 'socket.io-client';
 import apiService from '../../services/api';
 
-const socket = io();
+// Extract the base URL from ApiService's API_BASE_URL
+const API_BASE = new URL((import.meta.env.VITE_API_URL || '').replace('/api', '') || window.location.origin).origin;
+
+const socket = io(API_BASE, {
+  path: '/socket.io',
+  transports: ['websocket', 'polling']
+});
 
 const ActivitySummary: React.FC = () => {
   const [activeStudents, setActiveStudents] = useState<number>(0);
