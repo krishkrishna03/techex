@@ -78,8 +78,6 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
   const [allTests, setAllTests] = useState<TestWithStatus[]>([]);
   const [activeTestType, setActiveTestType] = useState('Assessment');
   const [activeSubject, setActiveSubject] = useState('all');
-  const [dropdownCounts, setDropdownCounts] = useState<any>(null);
-  const [categorizedCounts, setCategorizedCounts] = useState<any>(null);
   const [showUserForm, setShowUserForm] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showStudentAssignment, setShowStudentAssignment] = useState(false);
@@ -226,54 +224,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
       ) as TestWithStatus[];
       setAllTests(data);
 
-      // Calculate counts for dropdown
-      const allTestsData = await apiService.getAllTestsForCollege() as TestWithStatus[];
-      const dropdownCounts = {
-        assessment: allTestsData.filter((t: TestWithStatus) => t.testType === 'Assessment').length,
-        practice: allTestsData.filter((t: TestWithStatus) => t.testType === 'Practice').length,
-        mockTest: allTestsData.filter((t: TestWithStatus) => t.testType === 'Mock Test').length,
-        company: allTestsData.filter((t: TestWithStatus) => t.testType === 'Specific Company Test').length
-      };
-      setDropdownCounts(dropdownCounts);
-
-      // Calculate categorized counts for CategorizedTestTabs
-      const categorizedCounts = {
-        assessment: {
-          all: allTestsData.filter((t: TestWithStatus) => t.testType === 'Assessment').length,
-          Verbal: allTestsData.filter((t: TestWithStatus) => t.testType === 'Assessment' && t.subject === 'Verbal').length,
-          Reasoning: allTestsData.filter((t: TestWithStatus) => t.testType === 'Assessment' && t.subject === 'Reasoning').length,
-          Technical: allTestsData.filter((t: TestWithStatus) => t.testType === 'Assessment' && t.subject === 'Technical').length,
-          Arithmetic: allTestsData.filter((t: TestWithStatus) => t.testType === 'Assessment' && t.subject === 'Arithmetic').length,
-          Communication: allTestsData.filter((t: TestWithStatus) => t.testType === 'Assessment' && t.subject === 'Communication').length
-        },
-        practice: {
-          all: allTestsData.filter((t: TestWithStatus) => t.testType === 'Practice').length,
-          Verbal: allTestsData.filter((t: TestWithStatus) => t.testType === 'Practice' && t.subject === 'Verbal').length,
-          Reasoning: allTestsData.filter((t: TestWithStatus) => t.testType === 'Practice' && t.subject === 'Reasoning').length,
-          Technical: allTestsData.filter((t: TestWithStatus) => t.testType === 'Practice' && t.subject === 'Technical').length,
-          Arithmetic: allTestsData.filter((t: TestWithStatus) => t.testType === 'Practice' && t.subject === 'Arithmetic').length,
-          Communication: allTestsData.filter((t: TestWithStatus) => t.testType === 'Practice' && t.subject === 'Communication').length
-        },
-        mockTest: {
-          all: allTestsData.filter((t: TestWithStatus) => t.testType === 'Mock Test').length,
-          Verbal: allTestsData.filter((t: TestWithStatus) => t.testType === 'Mock Test' && t.subject === 'Verbal').length,
-          Reasoning: allTestsData.filter((t: TestWithStatus) => t.testType === 'Mock Test' && t.subject === 'Reasoning').length,
-          Technical: allTestsData.filter((t: TestWithStatus) => t.testType === 'Mock Test' && t.subject === 'Technical').length,
-          Arithmetic: allTestsData.filter((t: TestWithStatus) => t.testType === 'Mock Test' && t.subject === 'Arithmetic').length,
-          Communication: allTestsData.filter((t: TestWithStatus) => t.testType === 'Mock Test' && t.subject === 'Communication').length
-        },
-        company: {
-          all: allTestsData.filter((t: TestWithStatus) => t.testType === 'Specific Company Test').length,
-          Verbal: allTestsData.filter((t: TestWithStatus) => t.testType === 'Specific Company Test' && t.subject === 'Verbal').length,
-          Reasoning: allTestsData.filter((t: TestWithStatus) => t.testType === 'Specific Company Test' && t.subject === 'Reasoning').length,
-          Technical: allTestsData.filter((t: TestWithStatus) => t.testType === 'Specific Company Test' && t.subject === 'Technical').length,
-          Arithmetic: allTestsData.filter((t: TestWithStatus) => t.testType === 'Specific Company Test' && t.subject === 'Arithmetic').length,
-          Communication: allTestsData.filter((t: TestWithStatus) => t.testType === 'Specific Company Test' && t.subject === 'Communication').length
-        }
-      };
-      setCategorizedCounts(categorizedCounts);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to load tests');
+      setAllTests(data);
     } finally {
       setLoading(false);
     }
@@ -468,10 +419,6 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
       );
     }
 
-    const handleFilterChange = (testType: string, subject: string) => {
-      setActiveTestType(testType);
-      setActiveSubject(subject);
-    };
 
     return (
       <div className="space-y-6">
@@ -798,6 +745,17 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
     return (
       <div className="space-y-6">
         {renderUserTable(faculty, 'Faculty')}
+        {facultyTotal !== null && faculty.length < facultyTotal && (
+          <div className="text-center">
+            <button
+              onClick={loadMoreFaculty}
+              className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50"
+              disabled={formLoading}
+            >
+              {formLoading ? 'Loading...' : 'Load more faculty'}
+            </button>
+          </div>
+        )}
 
         <Modal
           isOpen={showUserForm}
@@ -821,7 +779,6 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
           <BulkUploadForm
             role="faculty"
             onSubmit={handleBulkUpload}
-            loading={formLoading}
             onClose={() => setShowBulkUpload(false)}
           />
         </Modal>
@@ -863,6 +820,17 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
       <>
         <div className="space-y-6">
           {renderUserTable(students, 'Students')}
+          {studentsTotal !== null && students.length < studentsTotal && (
+            <div className="text-center">
+              <button
+                onClick={loadMoreStudents}
+                className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50"
+                disabled={formLoading}
+              >
+                {formLoading ? 'Loading...' : 'Load more students'}
+              </button>
+            </div>
+          )}
 
           <Modal
             isOpen={showUserForm}
@@ -886,7 +854,6 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
             <BulkUploadForm
               role="student"
               onSubmit={handleBulkUpload}
-              loading={formLoading}
               onClose={() => setShowBulkUpload(false)}
             />
           </Modal>
@@ -1090,11 +1057,10 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
         <BulkUploadForm 
           role={defaultRole}
           onSubmit={handleBulkUpload} 
-          loading={formLoading}
           onClose={() => setShowBulkUpload(false)}
         />
       </Modal>
-       </div>
+    </div>
   );
 };
 
@@ -1126,10 +1092,21 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
     loadFilters();
   }, []);
 
+  // Debounce student load to avoid excessive requests during typing/search
   useEffect(() => {
-    if (selectedBranch || selectedBatch || selectedSection || searchTerm) {
-      loadStudents();
+    const shouldLoad = selectedBranch || selectedBatch || selectedSection || searchTerm;
+    if (!shouldLoad) {
+      // Clear filtered list when no filters/search
+      setFilteredStudents([]);
+      return;
     }
+
+    const delay = 300; // ms
+    const handler = setTimeout(() => {
+      loadStudents();
+    }, delay);
+
+    return () => clearTimeout(handler);
   }, [selectedBranch, selectedBatch, selectedSection, searchTerm]);
 
   const loadFilters = async () => {
@@ -1152,13 +1129,23 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
 
   const loadStudents = async () => {
     try {
-      const studentsData = await apiService.getStudents(
+      // Request paginated students to avoid huge payloads
+      const resp: any = await apiService.getStudents(
         selectedBranch || undefined,
         selectedBatch || undefined,
         selectedSection || undefined,
-        searchTerm || undefined
-      ) as User[];
-      setFilteredStudents(studentsData);
+        searchTerm || undefined,
+        1, // page
+        500 // limit (upper bound for modal selection)
+      );
+
+      if (Array.isArray(resp)) {
+        setFilteredStudents(resp);
+      } else if (resp && resp.students) {
+        setFilteredStudents(resp.students);
+      } else {
+        setFilteredStudents([]);
+      }
     } catch (error) {
       console.error('Failed to load students:', error);
       setFilteredStudents([]);
