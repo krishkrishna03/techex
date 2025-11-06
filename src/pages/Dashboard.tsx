@@ -20,7 +20,7 @@ import NotificationAnalytics from '../components/Notifications/NotificationAnaly
 import StudentHierarchy from '../components/Student/StudentHierarchy';
 import ReportsPage from '../components/Reports/ReportsPage';
 import ExamManagement from '../components/Exam/ExamManagement';
-import { Bell } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import apiService from '../services/api';
 
 const Dashboard: React.FC = () => {
@@ -136,6 +136,16 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
+      {/* Floating toggle to ensure sidebar can be toggled even if Navbar not visible */}
+      {!isTestMode && (
+        <button
+          onClick={() => setIsSidebarOpen(v => !v)}
+          className="fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md text-gray-600 hover:bg-gray-100"
+          title="Toggle menu"
+        >
+          <Menu size={20} />
+        </button>
+      )}
       {!isTestMode && (
       <Sidebar
         userRole={state.user.role}
