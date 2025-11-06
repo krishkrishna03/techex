@@ -170,9 +170,9 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
         subject === 'all' ? undefined : subject
       );
       setTests(testsData as Test[]);
-      // If the server didn't send testCounts, keep previous client-side approach (fallback)
+      // testCounts should be set from analyticsData (authoritative)
+      // Fallback only if not available
       if (!testCounts) {
-        // minimal fallback: compute basic bySubject from testsData
         const fallbackBySubject = {
           Verbal: (testsData as any[]).filter((t: any) => t.subject === 'Verbal').length,
           Reasoning: (testsData as any[]).filter((t: any) => t.subject === 'Reasoning').length,
@@ -292,14 +292,20 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
     try {
       setEditLoadError(null);
       const testDetails = await apiService.getTest(testId);
-      setEditingTest(testDetails as Test);
-      setShowTestForm(true);
+      if (testDetails) {
+        setEditingTest(testDetails as Test);
+        setShowTestForm(true);
+      } else {
+        setEditLoadError('Test details not found.');
+        setEditingTest(null);
+        setShowTestForm(false);
+      }
     } catch (error) {
       // show inline error in modal instead of alert
       const msg = error instanceof Error ? error.message : 'Failed to load test details';
       setEditLoadError(msg);
       setEditingTest(null);
-      setShowTestForm(true);
+      setShowTestForm(false);
     }
   };
 
