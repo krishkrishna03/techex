@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Users, TrendingUp, Download, Filter, Calendar, BookOpen, GraduationCap } from 'lucide-react';
+import { BarChart3, Users, TrendingUp,  Filter } from 'lucide-react';
 import apiService from '../../services/api';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import ExportButton from '../Dashboard/ExportButton';
@@ -46,7 +46,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole }) => {
 
     const loadOptions = async () => {
       try {
-        const hierarchyData = await apiService.getCollegeHierarchy();
+        const hierarchyData = await apiService.getCollegeHierarchy() as { hierarchy?: Record<string, any> };
         const hierarchy = hierarchyData?.hierarchy || {};
 
         if (!isMounted) return;
@@ -111,12 +111,15 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ userRole }) => {
         if (!isMounted) return;
 
         // Ensure arrays have defaults
+        const safeData: ReportData = (data && typeof data === 'object' ? data : {
+          summary: { totalStudents: 0, totalAttempts: 0, averagePercentage: 0 }
+        }) as ReportData;
         const normalizedData = {
-          ...data,
-          students: data?.students || [],
-          performance: data?.performance || [],
-          attempts: data?.attempts || [],
-          sectionPerformance: data?.sectionPerformance || []
+          ...safeData,
+          students: safeData.students || [],
+          performance: safeData.performance || [],
+          attempts: safeData.attempts || [],
+          sectionPerformance: safeData.sectionPerformance || []
         };
         setReportData(normalizedData);
       } catch (error) {
