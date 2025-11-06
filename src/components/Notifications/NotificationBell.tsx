@@ -19,11 +19,14 @@ interface Notification {
   createdAt: string;
 }
 
-const NotificationBell: React.FC = () => {
+interface NotificationBellProps {
+  onNavigate?: (tab: string) => void;
+}
+
+const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadNotifications();
@@ -34,7 +37,11 @@ const NotificationBell: React.FC = () => {
 
   const loadNotifications = async () => {
     try {
-      const data = await apiService.getMyNotifications(1, 5);
+      type NotificationsResponse = {
+        notifications: Notification[];
+        unreadCount: number;
+      };
+      const data = await apiService.getMyNotifications(1, 5) as NotificationsResponse;
       setNotifications(data.notifications);
       setUnreadCount(data.unreadCount);
     } catch (error) {
@@ -171,8 +178,12 @@ const NotificationBell: React.FC = () => {
                 <button
                   onClick={() => {
                     setShowDropdown(false);
-                    // Navigate to notifications page
-                    window.location.hash = '#notifications';
+                    // Prefer app navigation callback if provided, otherwise fallback to hash navigation
+                    if (typeof onNavigate === 'function') {
+                      onNavigate('notifications');
+                    } else {
+                      window.location.hash = '#notifications';
+                    }
                   }}
                   className="w-full text-sm text-blue-600 hover:text-blue-800 font-medium"
                 >
