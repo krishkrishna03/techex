@@ -159,8 +159,13 @@ class ApiService {
     });
   }
 
-  async getCollegeUsers(role: 'faculty' | 'student') {
-    return this.request(`/college/users/${role}`);
+  // If page & limit provided, the server returns { users, total, page, limit }
+  async getCollegeUsers(role: 'faculty' | 'student', page?: number, limit?: number) {
+    const params = new URLSearchParams();
+    if (page) params.append('page', String(page));
+    if (limit) params.append('limit', String(limit));
+    const queryString = params.toString();
+    return this.request(queryString ? `/college/users/${role}?${queryString}` : `/college/users/${role}`);
   }
 
   async getCollegeDashboard() {
@@ -537,12 +542,15 @@ class ApiService {
     return this.request('/college/sections');
   }
 
-  async getStudents(branch?: string, batch?: string, section?: string, search?: string) {
+  // Supports optional pagination: page & limit
+  async getStudents(branch?: string, batch?: string, section?: string, search?: string, page?: number, limit?: number) {
     const params = new URLSearchParams();
     if (branch) params.append('branch', branch);
     if (batch) params.append('batch', batch);
     if (section) params.append('section', section);
     if (search) params.append('search', search);
+    if (page) params.append('page', String(page));
+    if (limit) params.append('limit', String(limit));
 
     const queryString = params.toString();
     return this.request(`/college/students${queryString ? `?${queryString}` : ''}`);
