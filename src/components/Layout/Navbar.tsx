@@ -1,7 +1,5 @@
 import React from 'react';
-import { LogOut, User, Settings, Bell } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import apiService from '../../services/api';
+import { LogOut, User } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import NotificationBell from '../Notifications/NotificationBell';
 
@@ -12,16 +10,7 @@ interface NavbarProps {
 
 const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick }) => {
   const { state, dispatch } = useAuth();
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    apiService.getSettings().then((res: any) => {
-      if (!mounted) return;
-      setLogoUrl(res?.logo_url || res?.logoUrl || '/assets/default-logo.svg');
-    }).catch(() => setLogoUrl('/assets/default-logo.svg'));
-    return () => { mounted = false; };
-  }, []);
+  // logo fetching removed — use default static asset in the markup
 
   const handleLogout = () => {
     dispatch({ type: 'LOGOUT' });
@@ -41,13 +30,7 @@ const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick }) => {
     <nav className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <a href="/" aria-label="Homepage">
-            <img
-              src={logoUrl || '/assets/default-logo.svg'}
-              alt="Platform Logo"
-              className="h-10 w-auto object-contain"
-            />
-          </a>
+          {/* logo removed — title is shown inline */}
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
             {state.user?.collegeName && (
