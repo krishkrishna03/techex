@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, ChevronRight, ChevronDown, GraduationCap, BookOpen, User, Mail, Phone, Hash, Calendar, CheckCircle, Clock, CreditCard as Edit, Trash2 } from 'lucide-react';
+import { Users, ChevronRight, ChevronDown, GraduationCap, BookOpen, User,  Calendar, CheckCircle, Clock, CreditCard as Edit, Trash2 } from 'lucide-react';
 import apiService from '../../services/api';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import Modal from '../UI/Modal';
@@ -59,8 +59,9 @@ const StudentHierarchy: React.FC = () => {
     try {
       setLoading(true);
       const data = await apiService.getCollegeHierarchy();
-      setHierarchyData(data.hierarchy);
-      setSummary(data.summary);
+      const typedData = data as { hierarchy: HierarchyData; summary: Summary };
+      setHierarchyData(typedData.hierarchy);
+      setSummary(typedData.summary);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to load hierarchy data');
     } finally {
