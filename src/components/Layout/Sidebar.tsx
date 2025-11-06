@@ -48,6 +48,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, collapsed = false }): JSX.Element => {
   const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set());
   const [testCounts, setTestCounts] = useState<any>(null);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
   useEffect(() => {
     loadTestCounts();
@@ -314,20 +315,40 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
           <div key={item.id}>
             {item.subItems ? (
               <>
-                <button
-                  onClick={() => handleTestsClick(item.id)}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-colors ${activeTab === item.id || (item.id === 'tests' && (activeTab === 'tests' || activeTab === 'assigned-tests')) || (item.id === 'my-tests' && activeTab === 'my-tests')
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:text-white hover:bg-gray-800'
-                    }`}
-                  title={collapsed ? item.label : undefined}
+                <div className="relative"
+                  onMouseEnter={() => collapsed && setHoveredItem(item.id)}
+                  onMouseLeave={() => collapsed && setHoveredItem(null)}
                 >
-                  <div className="flex items-center gap-3">
-                    {item.icon}
-                    {!collapsed && item.label}
-                  </div>
-                  {openDropdowns.has(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </button>
+                  <button
+                    onClick={() => handleTestsClick(item.id)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-colors ${activeTab === item.id || (item.id === 'tests' && (activeTab === 'tests' || activeTab === 'assigned-tests')) || (item.id === 'my-tests' && activeTab === 'my-tests')
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-300 hover:text-white hover:bg-gray-800'
+                      }`}
+                    title={collapsed ? item.label : undefined}
+                  >
+                    <div className="flex items-center gap-3">
+                      {item.icon}
+                      {!collapsed && item.label}
+                    </div>
+                    {openDropdowns.has(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </button>
+
+                  {/* Flyout when collapsed and hovered */}
+                  {collapsed && hoveredItem === item.id && item.subItems && (
+                    <div className="absolute left-full top-0 ml-2 w-48 bg-gray-800 text-white rounded shadow-lg z-50">
+                      {item.subItems.map((sub) => (
+                        <button
+                          key={sub.id}
+                          onClick={() => handleSubItemClick(sub.testType || '', item.id)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700"
+                        >
+                          {sub.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {openDropdowns.has(item.id) && item.subItems && !collapsed && (
                   <div className="ml-4 mt-1 space-y-1">
                     {item.subItems.map((subItem: SubItem) => {
