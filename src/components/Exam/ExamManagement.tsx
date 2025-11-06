@@ -26,17 +26,22 @@ interface Test {
   createdAt: string;
 }
 
-const ExamManagement: React.FC<ExamManagementProps> = ({ userRole }) => {
-  const [selectedTestType, setSelectedTestType] = useState<string | null>(null);
-  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+interface TestCounts {
+  byType: Record<string, number>;
+  bySubject: Record<string, number>;
+}
+
+const ExamManagement: React.FC<ExamManagementProps> = ({ userRole }): JSX.Element => {
   const [tests, setTests] = useState<Test[]>([]);
-  const [testCounts, setTestCounts] = useState<any>({});
+  const [testCounts, setTestCounts] = useState<TestCounts>({ byType: {}, bySubject: {} });
   const [loading, setLoading] = useState(false);
   const [showTestForm, setShowTestForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [selectedTestType, setSelectedTestType] = useState<string | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
 
   const testTypes = [
     { id: 'Assessment', label: 'Assessment', icon: FileText, color: 'bg-blue-100 text-blue-800' },
@@ -54,6 +59,29 @@ const ExamManagement: React.FC<ExamManagementProps> = ({ userRole }) => {
     { id: 'Communication', label: 'Communication', icon: MessageSquare, color: 'bg-pink-100 text-pink-800' }
   ];
 
+  const loadTests = async () => {
+    try {
+      setLoading(true);
+      let testsData = [];
+      
+      if (userRole === 'master_admin') {
+        testsData = (await apiService.getTests(selectedTestType || undefined, selectedSubject || undefined)) as Test[];
+      } else if (userRole === 'college_admin') {
+        const assignedTests = (await apiService.getAssignedTests(selectedTestType || undefined, selectedSubject || undefined)) as { testId: Test }[];
+        testsData = assignedTests.map((assignment) => assignment.testId);
+      } else if (userRole === 'student') {
+        const assignedTests = (await apiService.getStudentAssignedTests(selectedTestType || undefined, selectedSubject || undefined)) as { testId: Test }[];
+        testsData = assignedTests.map((assignment: any) => assignment.testId);
+      }
+      
+      setTests(testsData);
+    } catch (error) {
+      console.error('Failed to load tests:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadTestCounts();
   }, []);
@@ -66,18 +94,17 @@ const ExamManagement: React.FC<ExamManagementProps> = ({ userRole }) => {
 
   const loadTestCounts = async () => {
     try {
-      let allTests = [];
+      let allTests: Test[] = [];
       
       if (userRole === 'master_admin') {
-        allTests = await apiService.getTests();
+        allTests = await apiService.getTests() as any[];
       } else if (userRole === 'college_admin') {
-        allTests = await apiService.getAssignedTests();
-      } else if (userRole === 'student') {
-        allTests = await apiService.getStudentAssignedTests();
+        const assignedTests = (await apiService.getAssignedTests()) as any[];
+        allTests = assignedTests.map(assignment => assignment.testId);
       }
 
       // Calculate counts by type and subject
-      const counts = {
+      const counts: TestCounts = {
         byType: {},
         bySubject: {}
       };
@@ -97,29 +124,6 @@ const ExamManagement: React.FC<ExamManagementProps> = ({ userRole }) => {
       setTestCounts(counts);
     } catch (error) {
       console.error('Failed to load test counts:', error);
-    }
-  };
-
-  const loadTests = async () => {
-    try {
-      setLoading(true);
-      let testsData = [];
-      
-      if (userRole === 'master_admin') {
-        testsData = await apiService.getTests(selectedTestType, selectedSubject);
-      } else if (userRole === 'college_admin') {
-        const assignedTests = await apiService.getAssignedTests(selectedTestType, selectedSubject);
-        testsData = assignedTests.map((assignment: any) => assignment.testId);
-      } else if (userRole === 'student') {
-        const assignedTests = await apiService.getStudentAssignedTests(selectedTestType, selectedSubject);
-        testsData = assignedTests.map((assignment: any) => assignment.testId);
-      }
-      
-      setTests(testsData);
-    } catch (error) {
-      console.error('Failed to load tests:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
