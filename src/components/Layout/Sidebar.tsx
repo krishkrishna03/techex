@@ -42,9 +42,10 @@ interface SidebarProps {
   userRole: string;
   activeTab: string;
   onTabChange: (tab: string) => void;
+  collapsed?: boolean;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange }): JSX.Element => {
+const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, collapsed = false }): JSX.Element => {
   const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set());
   const [testCounts, setTestCounts] = useState<any>(null);
 
@@ -295,15 +296,15 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange }): 
   };
 
   return (
-    <div className="bg-gray-900 text-white w-64 min-h-screen p-4">
+    <div className={`bg-gray-900 text-white ${collapsed ? 'w-16' : 'w-64'} min-h-screen p-4 transition-all duration-150`}>
       <div className="mb-8">
         <h2 className="text-xl font-bold flex items-center gap-2">
           <img
             src="/logo.png"       // 👈 replace this with your actual file name (e.g., /college_logo.png)
             alt="Logo"
-            className="w-6 h-6 mr-2"
+            className={`w-6 h-6 ${collapsed ? 'mx-auto' : 'mr-2'}`}
           />
-          <span>PlanTechx</span>
+          {!collapsed && <span>PlanTechx</span>}
 
         </h2>
       </div>
@@ -319,14 +320,15 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange }): 
                       ? 'bg-blue-600 text-white'
                       : 'text-gray-300 hover:text-white hover:bg-gray-800'
                     }`}
+                  title={collapsed ? item.label : undefined}
                 >
                   <div className="flex items-center gap-3">
                     {item.icon}
-                    {item.label}
+                    {!collapsed && item.label}
                   </div>
                   {openDropdowns.has(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
-                {openDropdowns.has(item.id) && item.subItems && (
+                {openDropdowns.has(item.id) && item.subItems && !collapsed && (
                   <div className="ml-4 mt-1 space-y-1">
                     {item.subItems.map((subItem: SubItem) => {
                       const count = getTestCount(subItem.testType || '');
@@ -358,9 +360,10 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange }): 
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-300 hover:text-white hover:bg-gray-800'
                   }`}
+                title={collapsed ? item.label : undefined}
               >
                 {item.icon}
-                {item.label}
+                {!collapsed && item.label}
               </button>
             )}
           </div>
