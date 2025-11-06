@@ -433,11 +433,12 @@ router.get('/users/sample-template/:role', auth, authorize('college_admin'), (re
   }
 });
 
-// Get all faculty/students for college (College Admin only)
+// Get all faculty/students for college (College Admin and Master Admin)
 // Supports optional pagination via query params: ?page=1&limit=50
-router.get('/users/:role', auth, authorize('college_admin'), async (req, res) => {
+router.get('/users/:role', auth, authorize('college_admin', 'master_admin'), async (req, res) => {
   try {
     const { role } = req.params;
+    const { collegeId } = req.query; // Allow passing collegeId for master_admin
     const page = parseInt(req.query.page) || null;
     const limit = parseInt(req.query.limit) || null;
 
@@ -445,11 +446,23 @@ router.get('/users/:role', auth, authorize('college_admin'), async (req, res) =>
       return res.status(400).json({ error: 'Invalid role' });
     }
 
-    const query = {
-      collegeId: req.user.collegeId,
+    // Build query based on role
+    let query = {
       role,
       isActive: true
     };
+
+    // For college_admin, always use their collegeId
+    if (req.user.role === 'college_admin') {
+      query.collegeId = req.user.collegeId;
+    }
+    // For master_admin, use provided collegeId or return error
+    else if (req.user.role === 'master_admin') {
+      if (!collegeId) {
+        return res.status(400).json({ error: 'College ID is required for master admin' });
+      }
+      query.collegeId = collegeId;
+    }
 
     // If pagination requested, return paginated response with metadata
     if (page && limit) {
@@ -461,18 +474,21 @@ router.get('/users/:role', auth, authorize('college_admin'), async (req, res) =>
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(limit)
+          .populate('collegeId', 'name code')
       ]);
 
       return res.json({ users, total, page, limit });
     }
 
-    // Fallback: return full list (existing behavior)
+    // Fallback: return full list with college info
     const users = await User.find(query)
       .select('-password')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .populate('collegeId', 'name code');
 
     res.json(users);
   } catch (error) {
+    logger.errorLog(error, { context: 'Get College Users' });
     res.status(500).json({ error: 'Server error' });
   }
 });
