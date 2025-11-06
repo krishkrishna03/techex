@@ -4,7 +4,6 @@ import {
   Users,
   GraduationCap,
   Building,
-  BookOpen,
   UserPlus,
   BarChart3,
   FileText,
@@ -299,8 +298,13 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange }): 
     <div className="bg-gray-900 text-white w-64 min-h-screen p-4">
       <div className="mb-8">
         <h2 className="text-xl font-bold flex items-center gap-2">
-          <BookOpen size={24} />
-          Academic System
+          <img
+  src="/logo.png"       // 👈 replace this with your actual file name (e.g., /college_logo.png)
+  alt="Logo"
+  className="w-6 h-6 mr-2"
+ />
+<span>PlanTechx</span>
+
         </h2>
       </div>
 
