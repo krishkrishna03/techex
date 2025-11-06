@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Users, GraduationCap, CheckCircle, Clock, FileText, Send, Eye, Upload, Bell, CreditCard as Edit, Trash2 } from 'lucide-react';
+import { Plus, Users, GraduationCap, CheckCircle, Clock, FileText, Send, Eye, Upload, CreditCard as Edit, Trash2 } from 'lucide-react';
 import apiService from '../../services/api';
 import Modal from '../../components/UI/Modal';
 import UserForm from '../../components/Forms/UserForm';
@@ -967,52 +967,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b flex justify-between items-center">
-                <h3 className="text-lg font-medium">Quick Actions</h3>
-                <button
-                  onClick={() => setShowNotificationForm(true)}
-                  className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm"
-                >
-                  <Bell size={16} />
-                  Send Notification
-                </button>
-              </div>
-              <div className="p-6 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => openUserForm('faculty')}
-                    className="bg-white border-2 border-gray-300 text-gray-700 p-3 rounded-lg hover:bg-gray-50 hover:border-gray-400 flex items-center gap-2 text-sm font-medium"
-                  >
-                    <Plus size={16} />
-                    Add Faculty
-                  </button>
-                  <button
-                    onClick={() => openBulkUpload('faculty')}
-                    className="bg-white border-2 border-gray-300 text-gray-700 p-3 rounded-lg hover:bg-gray-50 hover:border-gray-400 flex items-center gap-2 text-sm font-medium"
-                  >
-                    <Upload size={16} />
-                    Bulk Faculty
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => openUserForm('student')}
-                    className="bg-white border-2 border-gray-300 text-gray-700 p-3 rounded-lg hover:bg-gray-50 hover:border-gray-400 flex items-center gap-2 text-sm font-medium"
-                  >
-                    <Plus size={16} />
-                    Add Student
-                  </button>
-                  <button
-                    onClick={() => openBulkUpload('student')}
-                    className="bg-white border-2 border-gray-300 text-gray-700 p-3 rounded-lg hover:bg-gray-50 hover:border-gray-400 flex items-center gap-2 text-sm font-medium"
-                  >
-                    <Upload size={16} />
-                    Bulk Students
-                  </button>
-                </div>
-              </div>
-            </div>
+  
 
             <div className="bg-white rounded-lg shadow">
               <div className="px-6 py-4 border-b">
