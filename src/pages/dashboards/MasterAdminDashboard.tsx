@@ -4,8 +4,6 @@ import apiService from '../../services/api';
 import Modal from '../../components/UI/Modal';
 import ErrorBoundary from '../../components/ErrorBoundary/ErrorBoundary';
 import CollegeForm from '../../components/Forms/CollegeForm';
-// import TestForm from '../../components/Test/TestForm';
-//import TestCard from '../../components/Test/TestCard';
 import AdvancedTestGrid from '../../components/Test/AdvancedTestGrid';
 import TestAssignmentModal from '../../components/Test/TestAssignmentModal';
 import LoadingSpinner from '../../components/UI/LoadingSpinner';
@@ -15,13 +13,39 @@ import AnalyticsCard from '../../components/Dashboard/AnalyticsCard';
 import RecentActivity from '../../components/Dashboard/RecentActivity';
 import ActivitySummary from '../../components/Dashboard/ActivitySummary';
 import PendingActions from '../../components/Dashboard/PendingActions';
-import PlatformGrowth from '../../components/Dashboard/PlatformGrowth';
-// import TestTabs from '../../components/Test/TestTabs';
+import PlatformGrowth from '../../components/Dashboard/PlatformGrowth';;
 import ExportButton from '../../components/Dashboard/ExportButton';
-// import GrowthChart from '../../components/Charts/GrowthChart';
-// import CategorizedTestTabs from '../../components/Test/CategorizedTestTabs';
 import TestFormWithSections from '../../components/Test/TestFormWithSections';
 import CodingQuestionsList from '../../components/Coding/CodingQuestionsList';
+
+interface FacultyUser {
+  _id: string;
+  name: string;
+  email: string;
+  idNumber: string;
+  isActive: boolean;
+  lastLogin?: string;
+  collegeId?: {
+    name: string;
+    code: string;
+  };
+}
+
+interface StudentUser {
+  _id: string;
+  name: string;
+  email: string;
+  idNumber: string;
+  branch: string;
+  batch: string;
+  section: string;
+  isActive: boolean;
+  lastLogin?: string;
+  collegeId?: {
+    name: string;
+    code: string;
+  };
+}
 
 interface College {
   id: string;
@@ -104,6 +128,12 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
   const [searchTerm, setSearchTerm] = useState('');
   const [editingCollege, setEditingCollege] = useState<College | null>(null);
   const [showEditForm, setShowEditForm] = useState(false);
+  const [selectedTab, setSelectedTab] = useState('batches');
+  const [collegeUsers, setCollegeUsers] = useState<{ faculty: FacultyUser[], students: StudentUser[] }>({
+    faculty: [],
+    students: []
+  });
+  const [userLoading, setUserLoading] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'colleges' || activeTab === 'college-management' || activeTab === 'dashboard' || activeTab === 'stats') {
@@ -142,6 +172,22 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
       setError(error instanceof Error ? error.message : 'Failed to load data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCollegeUsers = async (collegeId: string, role: 'faculty' | 'student') => {
+    try {
+      setUserLoading(true);
+      const users = await apiService.getCollegeUsers(role, collegeId);
+      setCollegeUsers(prev => ({
+        ...prev,
+        [role === 'student' ? 'students' : 'faculty']: users
+      }));
+    } catch (error) {
+      console.error('Failed to load users:', error);
+      // Show error toast or notification here
+    } finally {
+      setUserLoading(false);
     }
   };
 
@@ -943,215 +989,374 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
     );
 
     return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <Building className="h-8 w-8" />
-              College Management
-            </h1>
+      <div>
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                <Building className="h-8 w-8" />
+                College Management
+              </h1>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCollegeForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Plus size={20} />
+                Add College
+              </button>
+              <button className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2">
+                <Trash2 size={20} />
+                Delete College
+              </button>
+            </div>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setShowCollegeForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Plus size={20} />
-              Add College
+
+          {/* Search and Filter */}
+          <div className="flex gap-4 items-center">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <input
+                type="text"
+                placeholder="Search colleges by name, code, or location..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+              <Filter size={20} />
+              Filter
             </button>
-            <button className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2">
-              <Trash2 size={20} />
-              Delete College
-            </button>
           </div>
-        </div>
 
-        {/* Search and Filter */}
-        <div className="flex gap-4 items-center">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-            <input
-              type="text"
-              placeholder="Search colleges by name, code, or location..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-            <Filter size={20} />
-            Filter
-          </button>
-        </div>
+          {/* College Cards */}
+          <div className="grid gap-6">
+            {Array.isArray(filteredColleges) && filteredColleges.length > 0 ? filteredColleges.map((college) => (
+              <div key={college.id} className="bg-white rounded-lg shadow border">
+                {/* College Card Header */}
+                <div className="p-6">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-xl font-semibold text-gray-900">{college.name}</h3>
+                        <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
+                          {college.code}
+                        </span>
+                        <span className={`px-2 py-1 text-xs font-medium rounded ${
+                          college.isActive 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {college.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Building className="h-4 w-4" />
+                          <span>{college.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Users className="h-4 w-4" />
+                          <span>{college.address}</span>
+                        </div>
+                      </div>
 
-        {/* College Cards */}
-        <div className="grid gap-6">
-          {Array.isArray(filteredColleges) && filteredColleges.length > 0 ? filteredColleges.map((college) => (
-            <div key={college.id} className="bg-white rounded-lg shadow border">
-              {/* College Card Header */}
-              <div className="p-6">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-xl font-semibold text-gray-900">{college.name}</h3>
-                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
-                        {college.code}
-                      </span>
-                      <span className={`px-2 py-1 text-xs font-medium rounded ${
-                        college.isActive 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {college.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Building className="h-4 w-4" />
-                        <span>{college.email}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-gray-600">
-                        <Users className="h-4 w-4" />
-                        <span>{college.address}</span>
-                      </div>
-                    </div>
-
-                    {/* Stats */}
-                    <div className="grid grid-cols-4 gap-4">
-                      <div className="text-center p-3 bg-gray-50 border rounded">
-                        <p className="text-2xl font-bold text-gray-900">{college.totalStudents}</p>
-                        <p className="text-sm text-gray-600">Students</p>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 border rounded">
-                        <p className="text-2xl font-bold text-gray-900">{college.totalFaculty}</p>
-                        <p className="text-sm text-gray-600">Batches</p>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 border rounded">
-                        <p className="text-2xl font-bold text-gray-900">0</p>
-                        <p className="text-sm text-gray-600">Tests</p>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 border rounded">
-                        <p className="text-2xl font-bold text-gray-900">0</p>
-                        <p className="text-sm text-gray-600">Tests</p>
+                      {/* Stats */}
+                      <div className="grid grid-cols-4 gap-4">
+                        <div className="text-center p-3 bg-gray-50 border rounded">
+                          <p className="text-2xl font-bold text-gray-900">{college.totalStudents}</p>
+                          <p className="text-sm text-gray-600">Students</p>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 border rounded">
+                          <p className="text-2xl font-bold text-gray-900">{college.totalFaculty}</p>
+                          <p className="text-sm text-gray-600">Batches</p>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 border rounded">
+                          <p className="text-2xl font-bold text-gray-900">0</p>
+                          <p className="text-sm text-gray-600">Tests</p>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 border rounded">
+                          <p className="text-2xl font-bold text-gray-900">0</p>
+                          <p className="text-sm text-gray-600">Tests</p>
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={() => setExpandedCollege(expandedCollege === college.id ? null : college.id)}
+                      className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                    >
+                      <Eye size={16} />
+                      View
+                    </button>
+                    <button 
+                      onClick={() => handleEditCollege(college)}
+                      className="flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                    >
+                      <Edit size={16} />
+                      Edit
+                    </button>
+                    <button 
+                      onClick={() => handleManageAdmin(college)}
+                      className="flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                    >
+                      <Settings size={16} />
+                      Admin
+                    </button>
+                  </div>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex gap-2 mt-4">
-                  <button
-                    onClick={() => setExpandedCollege(expandedCollege === college.id ? null : college.id)}
-                    className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                  >
-                    <Eye size={16} />
-                    View
-                  </button>
-                  <button 
-                    onClick={() => handleEditCollege(college)}
-                    className="flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                  >
-                    <Edit size={16} />
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => handleManageAdmin(college)}
-                    className="flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200"
-                  >
-                    <Settings size={16} />
-                    Admin
-                  </button>
-                </div>
+                {/* Expanded Details */}
+                {expandedCollege === college.id && (
+                  <div className="border-t bg-gray-50">
+                    <div className="p-6">
+                      <div className="flex justify-between items-center mb-4">
+                        <h4 className="text-lg font-semibold text-gray-900">
+                          {college.name} - Detailed View
+                        </h4>
+                        <button
+                          onClick={() => {
+                            setExpandedCollege(null);
+                            setSelectedTab('batches');
+                            setCollegeUsers({ faculty: [], students: [] });
+                          }}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      {/* Tabs */}
+                      <div className="flex border-b mb-6">
+                        <button 
+                          onClick={() => setSelectedTab('batches')}
+                          className={`px-4 py-2 ${
+                            selectedTab === 'batches' 
+                              ? 'border-b-2 border-blue-500 text-blue-600 font-medium' 
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <Building className="inline h-4 w-4 mr-2" />
+                          Batches
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setSelectedTab('faculty');
+                            loadCollegeUsers(college.id, 'faculty');
+                          }}
+                          className={`px-4 py-2 ${
+                            selectedTab === 'faculty' 
+                              ? 'border-b-2 border-blue-500 text-blue-600 font-medium' 
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <Users className="inline h-4 w-4 mr-2" />
+                          Faculty
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setSelectedTab('students');
+                            loadCollegeUsers(college.id, 'student');
+                          }}
+                          className={`px-4 py-2 ${
+                            selectedTab === 'students' 
+                              ? 'border-b-2 border-blue-500 text-blue-600 font-medium' 
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <GraduationCap className="inline h-4 w-4 mr-2" />
+                          Students
+                        </button>
+                        <button 
+                          onClick={() => setSelectedTab('tests')}
+                          className={`px-4 py-2 ${
+                            selectedTab === 'tests' 
+                              ? 'border-b-2 border-blue-500 text-blue-600 font-medium' 
+                              : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          <FileText className="inline h-4 w-4 mr-2" />
+                          Tests
+                        </button>
+                      </div>
+
+                      {/* Content Based on Selected Tab */}
+                      {userLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <LoadingSpinner size="md" />
+                        </div>
+                      ) : (
+                        <>
+                          {selectedTab === 'batches' && (
+                            <div className="grid grid-cols-3 gap-6">
+                              <div className="bg-white p-4 rounded-lg border">
+                                <div className="flex items-center justify-between mb-2">
+                                  <h5 className="font-medium text-gray-900">Batch 2024</h5>
+                                  <Eye className="h-4 w-4 text-gray-400" />
+                                </div>
+                                <p className="text-sm text-gray-600 mb-2">3 Streams</p>
+                                <div className="text-center">
+                                  <p className="text-2xl font-bold text-blue-600">1240</p>
+                                  <p className="text-sm text-gray-600">Total Students</p>
+                                </div>
+                              </div>
+
+                              <div className="bg-white p-4 rounded-lg border">
+                                <div className="flex items-center justify-between mb-2">
+                                  <h5 className="font-medium text-gray-900">Batch 2025</h5>
+                                  <Eye className="h-4 w-4 text-gray-400" />
+                                </div>
+                                <p className="text-sm text-gray-600 mb-2">2 Streams</p>
+                                <div className="text-center">
+                                  <p className="text-2xl font-bold text-blue-600">980</p>
+                                  <p className="text-sm text-gray-600">Total Students</p>
+                                </div>
+                              </div>
+
+                              <div className="bg-white p-4 rounded-lg border">
+                                <div className="flex items-center justify-between mb-2">
+                                  <h5 className="font-medium text-gray-900">Batch 2026</h5>
+                                  <Eye className="h-4 w-4 text-gray-400" />
+                                </div>
+                                <p className="text-sm text-gray-600 mb-2">2 Streams</p>
+                                <div className="text-center">
+                                  <p className="text-2xl font-bold text-blue-600">650</p>
+                                  <p className="text-sm text-gray-600">Total Students</p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedTab === 'faculty' && (
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Name
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Email
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Status
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Last Active
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                  {collegeUsers.faculty.map((faculty, index) => (
+                                    <tr key={index}>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        {faculty.name}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {faculty.email}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                          faculty.isActive 
+                                            ? 'bg-green-100 text-green-800' 
+                                            : 'bg-red-100 text-red-800'
+                                        }`}>
+                                          {faculty.isActive ? 'Active' : 'Inactive'}
+                                        </span>
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {faculty.lastLogin ? formatDate(faculty.lastLogin) : 'Never'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {selectedTab === 'students' && (
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Name
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      ID Number
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Batch
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Branch
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                      Status
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                  {collegeUsers.students.map((student, index) => (
+                                    <tr key={index}>
+                                      <td className="px-6 py-4 whitespace-nowrap">
+                                        <div>
+                                          <div className="text-sm font-medium text-gray-900">{student.name}</div>
+                                          <div className="text-sm text-gray-500">{student.email}</div>
+                                        </div>
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {student.idNumber}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {student.batch}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {student.branch}
+                                      </td>
+                                      <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                          student.isActive 
+                                            ? 'bg-green-100 text-green-800' 
+                                            : 'bg-red-100 text-red-800'
+                                        }`}>
+                                          {student.isActive ? 'Active' : 'Inactive'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {selectedTab === 'tests' && (
+                            <div className="space-y-4">
+                              <h5 className="font-medium text-gray-900">Test Assignments</h5>
+                              <p className="text-gray-500">No tests assigned yet.</p>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {/* Expanded Details */}
-              {expandedCollege === college.id && (
-                <div className="border-t bg-gray-50">
-                  <div className="p-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h4 className="text-lg font-semibold text-gray-900">
-                        {college.name} - Detailed View
-                      </h4>
-                      <button
-                        onClick={() => setExpandedCollege(null)}
-                        className="text-gray-500 hover:text-gray-700"
-                      >
-                        Close
-                      </button>
-                    </div>
-
-                    {/* Tabs */}
-                    <div className="flex border-b mb-6">
-                      <button className="px-4 py-2 border-b-2 border-blue-500 text-blue-600 font-medium">
-                        <Building className="inline h-4 w-4 mr-2" />
-                        Batches
-                      </button>
-                      <button className="px-4 py-2 text-gray-500 hover:text-gray-700">
-                        <Users className="inline h-4 w-4 mr-2" />
-                        Streams
-                      </button>
-                      <button className="px-4 py-2 text-gray-500 hover:text-gray-700">
-                        <FileText className="inline h-4 w-4 mr-2" />
-                        Test Assignments
-                      </button>
-                      <button className="px-4 py-2 text-gray-500 hover:text-gray-700">
-                        <Settings className="inline h-4 w-4 mr-2" />
-                        Features
-                      </button>
-                    </div>
-
-                    {/* Batch Content */}
-                    <div className="grid grid-cols-3 gap-6">
-                      <div className="bg-white p-4 rounded-lg border">
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="font-medium text-gray-900">Batch 2024</h5>
-                          <Eye className="h-4 w-4 text-gray-400" />
-                        </div>
-                        <p className="text-sm text-gray-600 mb-2">3 Streams</p>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-blue-600">1240</p>
-                          <p className="text-sm text-gray-600">Total Students</p>
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-lg border">
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="font-medium text-gray-900">Batch 2025</h5>
-                          <Eye className="h-4 w-4 text-gray-400" />
-                        </div>
-                        <p className="text-sm text-gray-600 mb-2">2 Streams</p>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-blue-600">980</p>
-                          <p className="text-sm text-gray-600">Total Students</p>
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-lg border">
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="font-medium text-gray-900">Batch 2026</h5>
-                          <Eye className="h-4 w-4 text-gray-400" />
-                        </div>
-                        <p className="text-sm text-gray-600 mb-2">2 Streams</p>
-                        <div className="text-center">
-                          <p className="text-2xl font-bold text-blue-600">650</p>
-                          <p className="text-sm text-gray-600">Total Students</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )) : (
-            <div className="text-center py-12 text-gray-500">
-              <Building className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-              <p>No colleges found matching your search</p>
-            </div>
-          )}
+            )) : (
+              <div className="text-center py-12 text-gray-500">
+                <Building className="mx-auto h-12 w-12 text-gray-300 mb-4" />
+                <p>No colleges found matching your search</p>
+              </div>
+            )}
+          </div>
         </div>
-
         {/* Modals */}
         <Modal
           isOpen={showCollegeForm}
