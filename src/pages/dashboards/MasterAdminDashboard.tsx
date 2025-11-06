@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Building, Users, GraduationCap,  CheckCircle, Clock, FileText, BarChart3,  BookOpen,  Search, Filter, Eye, CreditCard as Edit, Trash2, Settings, Bell } from 'lucide-react';
 import apiService from '../../services/api';
 import Modal from '../../components/UI/Modal';
+import ErrorBoundary from '../../components/ErrorBoundary/ErrorBoundary';
 import CollegeForm from '../../components/Forms/CollegeForm';
 // import TestForm from '../../components/Test/TestForm';
 //import TestCard from '../../components/Test/TestCard';
@@ -12,6 +13,7 @@ import NotificationForm from '../../components/Notifications/NotificationForm';
 import NotificationsPage from '../../components/Notifications/NotificationsPage';
 import AnalyticsCard from '../../components/Dashboard/AnalyticsCard';
 import RecentActivity from '../../components/Dashboard/RecentActivity';
+import ActivitySummary from '../../components/Dashboard/ActivitySummary';
 import PendingActions from '../../components/Dashboard/PendingActions';
 import PlatformGrowth from '../../components/Dashboard/PlatformGrowth';
 // import TestTabs from '../../components/Test/TestTabs';
@@ -86,10 +88,10 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
   const [tests, setTests] = useState<Test[]>([]);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [analyticsDays, setAnalyticsDays] = useState<number>(30);
   const [activeTestType, setActiveTestType] = useState('Assessment');
   const [activeSubject, setActiveSubject] = useState('all');
   const [testCounts, setTestCounts] = useState<any>(null);
-  const [categorizedCounts, setCategorizedCounts] = useState<any>(null);
   const [showCollegeForm, setShowCollegeForm] = useState(false);
   const [showTestForm, setShowTestForm] = useState(false);
   const [showNotificationForm, setShowNotificationForm] = useState(false);
@@ -106,7 +108,7 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
   useEffect(() => {
     if (activeTab === 'colleges' || activeTab === 'college-management' || activeTab === 'dashboard' || activeTab === 'stats') {
       loadData();
-      loadAnalyticsData();
+      loadAnalyticsData(analyticsDays);
     } else if (activeTab === 'tests') {
       loadTests(activeTestType, activeSubject);
     }
@@ -143,10 +145,17 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
     }
   };
 
-  const loadAnalyticsData = async () => {
+  // NOTE: analytics is loaded via loadAnalyticsData(days)
+
+  // Load analytics for a specific window (days)
+  const loadAnalyticsData = async (days: number) => {
     try {
-      const response = await apiService.getDashboardStats();
+      const response: any = await apiService.getDashboardStats(days);
       setAnalyticsData(response);
+      // When server provides authoritative testCounts, prefer those instead of recomputing locally
+      if (response && response.testCounts) {
+        setTestCounts(response.testCounts);
+      }
     } catch (error) {
       console.error('Failed to load analytics data:', error);
       setAnalyticsData(null);
@@ -161,69 +170,18 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
         subject === 'all' ? undefined : subject
       );
       setTests(testsData as Test[]);
-
-      // Calculate test counts for tabs
-      const allTests = await apiService.getTests() as any[];
-      const counts = {
-        byType: {
-          all: allTests.length,
-          Assessment: allTests.filter((t: any) => t.testType === 'Assessment').length,
-          Practice: allTests.filter((t: any) => t.testType === 'Practice').length,
-          // Use 'Assessment' (not 'Assignment') -- normalize to server's testType values
-          Assignment: allTests.filter((t: any) => t.testType === 'Assessment').length,
-          'Mock Test': allTests.filter((t: any) => t.testType === 'Mock Test').length,
-          'Specific Company Test': allTests.filter((t: any) => t.testType === 'Specific Company Test').length
-        },
-        bySubject: {
-          all: allTests.length,
-          Verbal: allTests.filter((t: any) => t.subject === 'Verbal').length,
-          Reasoning: allTests.filter((t: any) => t.subject === 'Reasoning').length,
-          Technical: allTests.filter((t: any) => t.subject === 'Technical').length,
-          Arithmetic: allTests.filter((t: any) => t.subject === 'Arithmetic').length,
-          Communication: allTests.filter((t: any) => t.subject === 'Communication').length
-        }
-      };
-      setTestCounts(counts);
-
-      // Calculate counts for dropdown
-      // Calculate counts for dropdown
-      // (dropdownCounts calculation removed as it is unused)
-      // Calculate categorized counts for CategorizedTestTabs
-      const categorizedCounts = {
-        assessment: {
-          all: allTests.filter((t: any) => t.testType === 'Assessment').length,
-          Verbal: allTests.filter((t: any) => t.testType === 'Assessment' && t.subject === 'Verbal').length,
-          Reasoning: allTests.filter((t: any) => t.testType === 'Assessment' && t.subject === 'Reasoning').length,
-          Technical: allTests.filter((t: any) => t.testType === 'Assessment' && t.subject === 'Technical').length,
-          Arithmetic: allTests.filter((t: any) => t.testType === 'Assessment' && t.subject === 'Arithmetic').length,
-          Communication: allTests.filter((t: any) => t.testType === 'Assessment' && t.subject === 'Communication').length
-        },
-        practice: {
-          all: allTests.filter((t: any) => t.testType === 'Practice').length,
-          Verbal: allTests.filter((t: any) => t.testType === 'Practice' && t.subject === 'Verbal').length,
-          Reasoning: allTests.filter((t: any) => t.testType === 'Practice' && t.subject === 'Reasoning').length,
-          Technical: allTests.filter((t: any) => t.testType === 'Practice' && t.subject === 'Technical').length,
-          Arithmetic: allTests.filter((t: any) => t.testType === 'Practice' && t.subject === 'Arithmetic').length,
-          Communication: allTests.filter((t: any) => t.testType === 'Practice' && t.subject === 'Communication').length
-        },
-        mockTest: {
-          all: allTests.filter((t: any) => t.testType === 'Mock Test').length,
-          Verbal: allTests.filter((t: any) => t.testType === 'Mock Test' && t.subject === 'Verbal').length,
-          Reasoning: allTests.filter((t: any) => t.testType === 'Mock Test' && t.subject === 'Reasoning').length,
-          Technical: allTests.filter((t: any) => t.testType === 'Mock Test' && t.subject === 'Technical').length,
-          Arithmetic: allTests.filter((t: any) => t.testType === 'Mock Test' && t.subject === 'Arithmetic').length,
-          Communication: allTests.filter((t: any) => t.testType === 'Mock Test' && t.subject === 'Communication').length
-        },
-        company: {
-          all: allTests.filter((t: any) => t.testType === 'Specific Company Test').length,
-          Verbal: allTests.filter((t: any) => t.testType === 'Specific Company Test' && t.subject === 'Verbal').length,
-          Reasoning: allTests.filter((t: any) => t.testType === 'Specific Company Test' && t.subject === 'Reasoning').length,
-          Technical: allTests.filter((t: any) => t.testType === 'Specific Company Test' && t.subject === 'Technical').length,
-          Arithmetic: allTests.filter((t: any) => t.testType === 'Specific Company Test' && t.subject === 'Arithmetic').length,
-          Communication: allTests.filter((t: any) => t.testType === 'Specific Company Test' && t.subject === 'Communication').length
-        }
-      };
-      setCategorizedCounts(categorizedCounts);
+      // If the server didn't send testCounts, keep previous client-side approach (fallback)
+      if (!testCounts) {
+        // minimal fallback: compute basic bySubject from testsData
+        const fallbackBySubject = {
+          Verbal: (testsData as any[]).filter((t: any) => t.subject === 'Verbal').length,
+          Reasoning: (testsData as any[]).filter((t: any) => t.subject === 'Reasoning').length,
+          Technical: (testsData as any[]).filter((t: any) => t.subject === 'Technical').length,
+          Arithmetic: (testsData as any[]).filter((t: any) => t.subject === 'Arithmetic').length,
+          Communication: (testsData as any[]).filter((t: any) => t.subject === 'Communication').length
+        };
+        setTestCounts((prev: any) => prev || { bySubject: fallbackBySubject });
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to load tests');
     } finally {
@@ -328,14 +286,20 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
   };
 
   const [editingTest, setEditingTest] = useState<Test | null>(null);
+  const [editLoadError, setEditLoadError] = useState<string | null>(null);
 
   const handleEditTest = async (testId: string) => {
     try {
+      setEditLoadError(null);
       const testDetails = await apiService.getTest(testId);
       setEditingTest(testDetails as Test);
       setShowTestForm(true);
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to load test details');
+      // show inline error in modal instead of alert
+      const msg = error instanceof Error ? error.message : 'Failed to load test details';
+      setEditLoadError(msg);
+      setEditingTest(null);
+      setShowTestForm(true);
     }
   };
 
@@ -496,10 +460,27 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b">
-            <h3 className="text-lg font-medium">Recent Login Activity</h3>
-          </div>
+              <div className="bg-white rounded-lg shadow">
+                <div className="px-6 py-4 border-b flex items-center justify-between">
+                  <h3 className="text-lg font-medium">Recent Login Activity</h3>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="analytics-days" className="text-sm text-gray-600">Window:</label>
+                    <select
+                      id="analytics-days"
+                      value={analyticsDays}
+                      onChange={(e) => {
+                        const d = parseInt(e.target.value, 10) || 30;
+                        setAnalyticsDays(d);
+                        loadAnalyticsData(d);
+                      }}
+                      className="border border-gray-300 rounded px-2 py-1 text-sm bg-white"
+                    >
+                      <option value={7}>7 days</option>
+                      <option value={30}>30 days</option>
+                      <option value={90}>90 days</option>
+                    </select>
+                  </div>
+                </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -519,12 +500,14 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {stats.recentLogins.map((login, index) => (
+                {(
+                  ((analyticsData && analyticsData.recentLogins) ? analyticsData.recentLogins : stats.recentLogins) as RecentLogin[]
+                ).map((login: RecentLogin, index: number) => (
                   <tr key={index}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
                         <div className="text-sm font-medium text-gray-900">{login.name}</div>
-                        <div className="text-sm text-gray-500">{login.email}</div>
+                        <div className="text-sm text-gray-500">{login.email || 'N/A'}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -587,11 +570,6 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
   }
 
   if (activeTab === 'tests') {
-    const handleFilterChange = (testType: string, subject: string) => {
-      setActiveTestType(testType);
-      setActiveSubject(subject);
-      loadTests(testType, subject);
-    };
 
     return (
       <div className="space-y-6">
@@ -627,16 +605,28 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
           title={editingTest ? "Edit Test" : "Create New Test"}
           size="xl"
         >
-          <TestFormWithSections
-            onSubmit={editingTest ? async (data) => {
-              await apiService.updateTest(editingTest._id, data);
-              setShowTestForm(false);
-              setEditingTest(null);
-              loadTests(activeTestType, activeSubject);
-            } : handleCreateTest}
-            loading={formLoading}
-            initialData={editingTest}
-          />
+          <ErrorBoundary fallback={<div className="p-4">Failed to load the test editor. Please try again.</div>}>
+            {editLoadError ? (
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-red-700">Unable to load test for editing</h3>
+                <p className="mt-2 text-sm text-gray-700">{editLoadError}</p>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => { setShowTestForm(false); setEditLoadError(null); }} className="px-3 py-2 bg-gray-200 rounded">Close</button>
+                </div>
+              </div>
+            ) : (
+              <TestFormWithSections
+                onSubmit={editingTest ? async (data) => {
+                  await apiService.updateTest(editingTest._id, data);
+                  setShowTestForm(false);
+                  setEditingTest(null);
+                  loadTests(activeTestType, activeSubject);
+                } : handleCreateTest}
+                loading={formLoading}
+                initialData={editingTest}
+              />
+            )}
+          </ErrorBoundary>
         </Modal>
 
         {selectedTest && (
@@ -1223,10 +1213,12 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
             </div>
           </div>
           {analyticsData && (
+            // Export the dashboard's recent activity by default so CSV matches the Recent Activity panel
             <ExportButton 
-              data={analyticsData} 
-              filename="dashboard-analytics"
-              title="Dashboard Analytics Report"
+              data={analyticsData}
+              exportArrayKey="recentActivity"
+              filename={`dashboard-analytics-${analyticsDays}d`}
+              title={`Dashboard Analytics Report (${analyticsDays}d)`}
             />
           )}
         </div>
@@ -1289,6 +1281,11 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
         {analyticsData?.platformGrowth && (
           <PlatformGrowth data={analyticsData.platformGrowth} />
         )}
+      </div>
+
+      {/* Real-time activity summary */}
+      <div className="mt-6">
+        <ActivitySummary />
       </div>
 
       {analyticsData?.recentActivity && (
