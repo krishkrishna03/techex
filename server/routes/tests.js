@@ -683,17 +683,26 @@ router.get('/college/assigned', auth, authorize('college_admin', 'faculty'), asy
   try {
     const { testType, subject } = req.query;
 
-    const assignments = await TestAssignment.find({
-      collegeId: req.user.collegeId,
-      assignedTo: 'college',
-      isActive: true
-    })
-    .populate('testId')
-    .populate('assignedBy', 'name email')
-    .sort({ createdAt: -1 });
+    // Get assignments and tests in parallel
+    const [assignments, tests] = await Promise.all([
+      TestAssignment.find({
+        collegeId: req.user.collegeId,
+        assignedTo: 'college',
+        isActive: true
+      })
+      .populate('testId')
+      .populate('assignedBy', 'name email')
+      .sort({ createdAt: -1 }),
+      Test.find({}, '_id') // Get just test IDs for validation
+    ]);
 
-    // Filter out assignments where testId is null (test was deleted)
-    let filteredAssignments = assignments.filter(assignment => assignment.testId !== null);
+    // Create a Set of valid test IDs
+    const validTestIds = new Set(tests.map(t => t._id.toString()));
+
+    // Filter out assignments where testId is null or test no longer exists
+    let filteredAssignments = assignments.filter(assignment => 
+      assignment.testId && validTestIds.has(assignment.testId._id.toString())
+    );
 
     if (testType && testType !== 'all') {
       filteredAssignments = filteredAssignments.filter(assignment =>
@@ -839,23 +848,35 @@ router.get('/student/assigned', auth, authorize('student'), async (req, res) => 
   try {
     const { testType, subject } = req.query;
     
-    const assignments = await TestAssignment.find({
-      'studentFilters.specificStudents': req.user._id,
-      assignedTo: 'students',
-      status: 'accepted',
-      isActive: true
-    })
-    .populate({
-      path: 'testId',
-      populate: {
-        path: 'codingQuestions.questionId'
-      }
-    })
-    .sort({ createdAt: -1 });
+    // Get assignments, tests, and attempts in parallel
+    const [assignments, tests] = await Promise.all([
+      TestAssignment.find({
+        'studentFilters.specificStudents': req.user._id,
+        assignedTo: 'students',
+        status: 'accepted',
+        isActive: true
+      })
+      .populate({
+        path: 'testId',
+        populate: {
+          path: 'codingQuestions.questionId'
+        }
+      })
+      .sort({ createdAt: -1 }),
+      Test.find({}, '_id') // Get just test IDs for validation
+    ]);
+
+    // Create a Set of valid test IDs
+    const validTestIds = new Set(tests.map(t => t._id.toString()));
+
+    // Filter out assignments where testId is null or test no longer exists
+    const validAssignments = assignments.filter(assignment => 
+      assignment.testId && validTestIds.has(assignment.testId._id.toString())
+    );
 
     // Check if student has already attempted each test
     const testsWithAttempts = await Promise.all(
-      assignments.map(async (assignment) => {
+      validAssignments.map(async (assignment) => {
         const attempt = await TestAttempt.findOne({
           testId: assignment.testId._id,
           studentId: req.user._id
@@ -1302,22 +1323,26 @@ router.put('/:id', auth, authorize('master_admin'), [
 router.delete('/:id', auth, authorize('master_admin'), async (req, res) => {
   try {
     const testId = req.params.id;
+    
+    // Delete all related assignments first
+    await TestAssignment.deleteMany({ testId });
+    
+    // Delete all related attempts
+    await TestAttempt.deleteMany({ testId });
 
-    // Check if test has attempts
-    const attemptCount = await TestAttempt.countDocuments({ testId });
-    if (attemptCount > 0) {
-      return res.status(400).json({ 
-        error: 'Cannot delete test with existing attempts. Test has been taken by students.' 
-      });
-    }
+    // Delete test attempts data used for reports
+    await Promise.all([
+      TestAssignment.updateMany(
+        { testId },
+        { $set: { isActive: false } }
+      ),
+      TestAttempt.updateMany(
+        { testId },
+        { $set: { isActive: false } }
+      )
+    ]);
 
-    // Check if test has assignments
-    const assignmentCount = await TestAssignment.countDocuments({ testId });
-    if (assignmentCount > 0) {
-      // Delete assignments first
-      await TestAssignment.deleteMany({ testId });
-    }
-
+    // Finally delete the test
     const test = await Test.findByIdAndDelete(testId);
     if (!test) {
       return res.status(404).json({ error: 'Test not found' });
