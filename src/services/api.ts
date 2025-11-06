@@ -159,9 +159,10 @@ class ApiService {
     });
   }
 
-  // If page & limit provided, the server returns { users, total, page, limit }
-  async getCollegeUsers(role: 'faculty' | 'student', page?: number, limit?: number) {
+    // If page & limit provided, the server returns { users, total, page, limit }
+  async getCollegeUsers(role: 'faculty' | 'student', collegeId?: string, page?: number, limit?: number) {
     const params = new URLSearchParams();
+    if (collegeId) params.append('collegeId', collegeId);
     if (page) params.append('page', String(page));
     if (limit) params.append('limit', String(limit));
     const queryString = params.toString();
