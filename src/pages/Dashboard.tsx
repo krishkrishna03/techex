@@ -27,6 +27,17 @@ const Dashboard: React.FC = () => {
   const { state } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Persist sidebar open/closed in localStorage so users keep preference across reloads
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('sidebarCollapsed');
+      if (stored !== null) {
+        setIsSidebarOpen(stored === 'false' ? true : false);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
   const [showProfile, setShowProfile] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
   // Listen for test mode changes
@@ -139,8 +150,14 @@ const Dashboard: React.FC = () => {
       {/* Floating toggle to ensure sidebar can be toggled even if Navbar not visible */}
       {!isTestMode && (
         <button
-          onClick={() => setIsSidebarOpen(v => !v)}
-          className="fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md text-gray-600 hover:bg-gray-100"
+          onClick={() => {
+            setIsSidebarOpen(v => {
+              const next = !v;
+              try { localStorage.setItem('sidebarCollapsed', String(!next)); } catch (e) {}
+              return next;
+            });
+          }}
+          className="fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md text-gray-600 hover:bg-gray-100 md:hidden"
           title="Toggle menu"
         >
           <Menu size={20} />
