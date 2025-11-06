@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Paperclip, X, Users, Building, GraduationCap } from 'lucide-react';
+import { Send, Paperclip, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import apiService from '../../services/api';
 import LoadingSpinner from '../UI/LoadingSpinner';
@@ -18,12 +18,14 @@ const NotificationForm: React.FC<NotificationFormProps> = ({ onSubmit, loading, 
     type: 'general',
     priority: 'medium',
     targetType: 'students',
+    targetGroup: 'students',
     targetColleges: [] as string[],
     targetUsers: [] as string[],
     filters: {
       branches: [] as string[],
       batches: [] as string[],
       sections: [] as string[],
+      roles: [] as string[],
     },
     scheduledFor: '',
     expiresAt: ''
@@ -119,16 +121,17 @@ const NotificationForm: React.FC<NotificationFormProps> = ({ onSubmit, loading, 
 
     try {
       await onSubmit(submitData);
-      // Reset form
+            // Reset form
       setFormData({
         title: '',
         message: '',
         type: 'general',
         priority: 'medium',
         targetType: 'students',
+        targetGroup: 'students',
         targetColleges: [],
         targetUsers: [],
-        filters: { branches: [], batches: [], sections: [] },
+        filters: { branches: [], batches: [], sections: [], roles: [] },
         scheduledFor: '',
         expiresAt: ''
       });
@@ -278,9 +281,11 @@ const NotificationForm: React.FC<NotificationFormProps> = ({ onSubmit, loading, 
           >
             {state.user?.role === 'master_admin' && (
               <>
-                <option value="colleges">🏢 Colleges</option>
-                <option value="faculty">👨‍🏫 Faculty</option>
-                <option value="students">🎓 Students</option>
+                <option value="colleges">🏢 All Colleges</option>
+                <option value="specific_college">🎯 Specific College</option>
+                <option value="faculty">👨‍🏫 All Faculty</option>
+                <option value="students">🎓 All Students</option>
+                <option value="targeted">🎯 Targeted Users</option>
               </>
             )}
             {state.user?.role === 'college_admin' && (
@@ -350,6 +355,113 @@ const NotificationForm: React.FC<NotificationFormProps> = ({ onSubmit, loading, 
             ))}
           </div>
           {errors.targetColleges && <p className="mt-1 text-sm text-red-600">{errors.targetColleges}</p>}
+        </div>
+      )}
+
+      {/* Filters for Master Admin - College Selection */}
+      {state.user?.role === 'master_admin' && formData.targetType === 'specific_college' && (
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Select College</h3>
+          <div className="max-h-48 overflow-y-auto border rounded-lg bg-white p-2 space-y-1">
+            {colleges.map((college) => (
+              <label key={college.id} className="flex items-center p-2 hover:bg-gray-50">
+                <input
+                  type="radio"
+                  checked={formData.targetColleges.includes(college.id)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setFormData(prev => ({...prev, targetColleges: [college.id]}));
+                    }
+                  }}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                />
+                <span className="ml-2 text-sm text-gray-700">{college.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filters for Master Admin - Targeted Users */}
+      {state.user?.role === 'master_admin' && formData.targetType === 'targeted' && formData.targetColleges.length > 0 && (
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-6">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">User Filters</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Target Group</label>
+                <select
+                  value={formData.targetGroup}
+                  onChange={(e) => setFormData(prev => ({...prev, targetGroup: e.target.value}))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="faculty">Faculty Members</option>
+                  <option value="students">Students</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {formData.targetGroup === 'students' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Branches (Optional)
+                </label>
+                <div className="max-h-32 overflow-y-auto border rounded-lg bg-white p-2 space-y-1">
+                  {filterOptions.branches.map((branch) => (
+                    <label key={branch} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.filters.branches.includes(branch)}
+                        onChange={(e) => handleFilterChange('branches', branch, e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">{branch}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Batches (Optional)
+                </label>
+                <div className="max-h-32 overflow-y-auto border rounded-lg bg-white p-2 space-y-1">
+                  {filterOptions.batches.map((batch) => (
+                    <label key={batch} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.filters.batches.includes(batch)}
+                        onChange={(e) => handleFilterChange('batches', batch, e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">{batch}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Sections (Optional)
+                </label>
+                <div className="max-h-32 overflow-y-auto border rounded-lg bg-white p-2 space-y-1">
+                  {filterOptions.sections.map((section) => (
+                    <label key={section} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.filters.sections.includes(section)}
+                        onChange={(e) => handleFilterChange('sections', section, e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">{section}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
