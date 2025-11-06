@@ -1173,6 +1173,7 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadFilters();
@@ -1198,16 +1199,30 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
   const loadFilters = async () => {
     try {
       setLoading(true);
+      setError(null);
       const [branchesData, batchesData, sectionsData] = await Promise.all([
         apiService.getBranches(),
         apiService.getBatches(),
         apiService.getSections()
       ]) as [string[], string[], string[]];
+      
+      // Check if we got valid data
+      if (!Array.isArray(branchesData) || !Array.isArray(batchesData) || !Array.isArray(sectionsData)) {
+        setError('Failed to load filters: Invalid data received');
+        return;
+      }
+      
       setBranches(branchesData);
       setBatches(batchesData);
       setSections(sectionsData);
+
+      // If we have filters, trigger initial student load
+      if (branchesData.length > 0 || batchesData.length > 0 || sectionsData.length > 0) {
+        await loadStudents();
+      }
     } catch (error) {
       console.error('Failed to load filters:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load filters');
     } finally {
       setLoading(false);
     }
@@ -1215,6 +1230,9 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
 
   const loadStudents = async () => {
     try {
+      setLoading(true);
+      setError(null);
+
       // Request paginated students to avoid huge payloads
       const resp: any = await apiService.getStudents(
         selectedBranch || undefined,
@@ -1231,10 +1249,14 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
         setFilteredStudents(resp.students);
       } else {
         setFilteredStudents([]);
+        setError('No students found matching the selected criteria');
       }
     } catch (error) {
       console.error('Failed to load students:', error);
       setFilteredStudents([]);
+      setError(error instanceof Error ? error.message : 'Failed to load students');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1280,14 +1302,6 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
-
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
@@ -1299,6 +1313,27 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
         </p>
       </div>
 
+      {loading && (
+        <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10">
+          <LoadingSpinner size="lg" />
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+          <p className="text-red-700">{error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              loadFilters();
+            }}
+            className="text-sm text-red-600 hover:text-red-800 mt-2"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1308,6 +1343,7 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
             value={selectedBranch}
             onChange={(e) => setSelectedBranch(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
           >
             <option value="">All Branches</option>
             {branches.map(branch => (
@@ -1324,6 +1360,7 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
             value={selectedBatch}
             onChange={(e) => setSelectedBatch(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
           >
             <option value="">All Batches</option>
             {batches.map(batch => (
@@ -1340,6 +1377,7 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
             value={selectedSection}
             onChange={(e) => setSelectedSection(e.target.value)}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
           >
             <option value="">All Sections</option>
             {sections.map(section => (
@@ -1359,6 +1397,7 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search by name, email, or ID..."
           className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+          disabled={loading}
         />
       </div>
 
@@ -1367,7 +1406,7 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
           <label className="block text-sm font-medium text-gray-700">
             Select Students ({selectedStudents.length} selected)
           </label>
-          {filteredStudents.length > 0 && (
+          {filteredStudents.length > 0 && !loading && (
             <button
               type="button"
               onClick={handleSelectAll}
@@ -1377,10 +1416,15 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
             </button>
           )}
         </div>
-        <div className="border rounded-lg max-h-64 overflow-y-auto">
-          {filteredStudents.length === 0 ? (
+        <div className="border rounded-lg max-h-64 overflow-y-auto relative">
+          {loading ? (
             <div className="text-center py-8 text-gray-500">
-              <p>No students found. Please adjust your filters.</p>
+              <LoadingSpinner size="sm" />
+              <p className="mt-2">Loading students...</p>
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p>No students found. Please adjust your filters or search term.</p>
             </div>
           ) : (
             <div className="divide-y">
@@ -1391,6 +1435,7 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
                     checked={selectedStudents.includes(student._id)}
                     onChange={() => handleStudentToggle(student._id)}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    disabled={loading}
                   />
                   <div className="ml-3 flex-1">
                     <p className="text-sm font-medium text-gray-900">{student.name}</p>
@@ -1410,13 +1455,13 @@ const StudentAssignmentForm: React.FC<StudentAssignmentFormProps> = ({
           type="button"
           onClick={onClose}
           className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
-          disabled={assigning}
+          disabled={assigning || loading}
         >
           Cancel
         </button>
         <button
           type="submit"
-          disabled={assigning || selectedStudents.length === 0}
+          disabled={assigning || loading || selectedStudents.length === 0}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
         >
           {assigning ? (
