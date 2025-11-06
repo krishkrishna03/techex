@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Code, Trophy, Clock, CheckCircle, BookMarked, Search, Filter } from 'lucide-react';
+import { Code, Trophy, Clock, CheckCircle,  Search, Filter } from 'lucide-react';
 import api from '../../services/api';
 import CodingInterface from './CodingInterface';
 
@@ -41,8 +41,9 @@ const PracticeCoding: React.FC = () => {
   const fetchQuestions = async () => {
     try {
       const response = await api.get('/api/coding/practice/questions');
-      setQuestions(response.data.questions);
-      setStats(response.data.stats);
+      const res = response as { data: { questions: PracticeQuestion[]; stats: typeof stats } };
+      setQuestions(res.data.questions);
+      setStats(res.data.stats);
     } catch (error) {
       console.error('Error fetching practice questions:', error);
     } finally {
@@ -88,7 +89,7 @@ const PracticeCoding: React.FC = () => {
     }
   };
 
-  const handleSubmit = async (submissionId: string, score: number) => {
+  const handleSubmit = async () => {
     fetchQuestions();
   };
 
