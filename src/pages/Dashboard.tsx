@@ -26,6 +26,7 @@ import apiService from '../services/api';
 const Dashboard: React.FC = () => {
   const { state } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showProfile, setShowProfile] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
   // Listen for test mode changes
@@ -136,36 +137,38 @@ const Dashboard: React.FC = () => {
   return (
     <div className="flex h-screen bg-gray-50">
       {!isTestMode && (
-        <Sidebar
-          userRole={state.user.role}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-        />
+      <Sidebar
+        userRole={state.user.role}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        collapsed={!isSidebarOpen}
+      />
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {!isTestMode && (
-          <Navbar
-            title={getDashboardTitle()}
-            onProfileClick={() => setShowProfile(true)}
-            onTabChange={setActiveTab}
-          />
-        )}
+      {!isTestMode && (
+        <Navbar
+        title={getDashboardTitle()}
+        onProfileClick={() => setShowProfile(true)}
+        onTabChange={setActiveTab}
+        onToggleSidebar={() => setIsSidebarOpen(v => !v)}
+        />
+      )}
 
-        <main className={`flex-1 overflow-x-hidden overflow-y-auto ${isTestMode ? '' : 'p-6'}`}>
-          {renderDashboardContent()}
-        </main>
+      <main className={`flex-1 overflow-x-hidden overflow-y-auto ${isTestMode ? '' : 'p-6'}`}>
+        {renderDashboardContent()}
+      </main>
       </div>
 
       {!isTestMode && (
-        <Modal
-          isOpen={showProfile}
-          onClose={() => setShowProfile(false)}
-          title="Profile"
-          size="md"
-        >
-          <ProfileModal onClose={() => setShowProfile(false)} />
-        </Modal>
+      <Modal
+        isOpen={showProfile}
+        onClose={() => setShowProfile(false)}
+        title="Profile"
+        size="md"
+      >
+        <ProfileModal onClose={() => setShowProfile(false)} />
+      </Modal>
       )}
     </div>
   );
