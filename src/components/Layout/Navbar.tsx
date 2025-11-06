@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Menu } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import NotificationBell from '../Notifications/NotificationBell';
 
@@ -7,9 +7,10 @@ interface NavbarProps {
   title: string;
   onProfileClick?: () => void;
   onTabChange?: (tab: string) => void;
+  onToggleSidebar?: () => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick, onTabChange }) => {
+const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick, onTabChange, onToggleSidebar }) => {
   const { state, dispatch } = useAuth();
   // logo fetching removed — use default static asset in the markup
 
@@ -31,6 +32,13 @@ const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick, onTabChange }) =
     <nav className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => onToggleSidebar && onToggleSidebar()}
+            className="p-2 mr-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Toggle menu"
+          >
+            <Menu size={20} />
+          </button>
           {/* logo removed — title is shown inline */}
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
