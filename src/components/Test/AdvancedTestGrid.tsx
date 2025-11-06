@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Filter, SlidersHorizontal, Grid3x3, List, Calendar, TrendingUp, X } from 'lucide-react';
+import { Search, Filter, SlidersHorizontal, Grid3x3, List, Calendar,  X } from 'lucide-react';
 import AdvancedTestCard from './AdvancedTestCard';
 
 interface Test {
