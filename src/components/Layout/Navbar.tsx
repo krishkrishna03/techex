@@ -6,9 +6,10 @@ import NotificationBell from '../Notifications/NotificationBell';
 interface NavbarProps {
   title: string;
   onProfileClick?: () => void;
+  onTabChange?: (tab: string) => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick }) => {
+const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick, onTabChange }) => {
   const { state, dispatch } = useAuth();
   // logo fetching removed — use default static asset in the markup
 
@@ -48,7 +49,7 @@ const Navbar: React.FC<NavbarProps> = ({ title, onProfileClick }) => {
           </div>
 
           <div className="flex items-center space-x-2">
-            <NotificationBell />
+            <NotificationBell onNavigate={onTabChange} />
             
             {onProfileClick && (
               <button
