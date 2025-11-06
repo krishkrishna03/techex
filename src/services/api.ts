@@ -644,6 +644,29 @@ class ApiService {
     return data;
   }
 
+  // Download sample template for faculty/student. Returns blob and suggested filename.
+  async downloadSampleTemplate(role: 'faculty' | 'student') {
+    const response = await fetch(`${API_BASE_URL}/college/users/sample-template/${role}`, {
+      headers: this.getHeaders(true),
+    });
+
+    if (!response.ok) {
+      // try parse json error
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error || `Failed to download template (status ${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const cd = response.headers.get('content-disposition');
+    let filename = `${role}_template.xlsx`;
+    if (cd) {
+      const match = /filename="?([^";]+)"?/.exec(cd);
+      if (match && match[1]) filename = match[1];
+    }
+
+    return { blob, filename };
+  }
+
   async getStudentReports() {
     return this.request('/tests/student/reports');
   }
