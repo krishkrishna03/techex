@@ -23,6 +23,10 @@ interface User {
   lastLogin?: string;
   createdAt: string;
   isActive: boolean;
+  assignedToCollege?: {
+    date: string;
+    assignedBy: string;
+  };
 }
 
 interface DashboardData {
@@ -92,13 +96,15 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDashboardData();
     if (activeTab === 'faculty') {
       loadFaculty();
     } else if (activeTab === 'students') {
       loadStudents();
     } else if (activeTab === 'assigned-tests') {
-      loadAssignedTests();
+      loadDashboardData();
+      loadAssignedTests(activeTestType, activeSubject);
+    } else {
+      loadDashboardData();
     }
   }, [activeTab, activeTestType, activeSubject]);
 
@@ -214,6 +220,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
   const loadAssignedTests = async (testType?: string, subject?: string) => {
     try {
       setLoading(true);
+      setError(null);
       const typeFilter = testType !== undefined ? testType : activeTestType;
       const subjectFilter = subject !== undefined ? subject : activeSubject;
 
@@ -221,9 +228,18 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
         typeFilter === 'all' ? undefined : typeFilter,
         subjectFilter === 'all' ? undefined : subjectFilter
       ) as TestWithStatus[];
-      setAllTests(data);
 
-      setAllTests(data);
+      // Add sorting by assignment date
+      const sortedData = [...data].sort((a, b) => {
+        if (!a.assignedAt) return 1;
+        if (!b.assignedAt) return -1;
+        return new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime();
+      });
+
+      setAllTests(sortedData);
+    } catch (err) {
+      console.error('Failed to load tests:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load tests');
     } finally {
       setLoading(false);
     }
@@ -929,9 +945,11 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
         </div>
         <div className="p-6">
           <div className="relative">
-            {students.sort((a, b) => 
-              (b.assignedToCollege?.date?.getTime() || 0) - (a.assignedToCollege?.date?.getTime() || 0)
-            ).map((student, index) => (
+            {students.sort((a, b) => {
+              const dateA = a.assignedToCollege?.date ? new Date(a.assignedToCollege.date).getTime() : 0;
+              const dateB = b.assignedToCollege?.date ? new Date(b.assignedToCollege.date).getTime() : 0;
+              return dateB - dateA;
+            }).map(student => (
               <div key={student._id} className="mb-6 relative">
                 <div className="flex items-start">
                   {/* Timeline Line */}
