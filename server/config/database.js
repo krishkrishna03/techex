@@ -39,17 +39,21 @@ const createMasterAdmin = async () => {
       logger.info('Creating Master Admin user');
       
       const newMasterAdmin = new User({
-        name: 'Master Administrator',
-        email: 'carelinkdesk@gmail.com',
-        password: 'admin123',
+        name: process.env.MASTER_ADMIN_NAME || 'Master Administrator',
+        email: process.env.MASTER_ADMIN_EMAIL,
+        password: process.env.MASTER_ADMIN_PASSWORD,
         role: 'master_admin'
       });
+
+      if (!process.env.MASTER_ADMIN_EMAIL || !process.env.MASTER_ADMIN_PASSWORD) {
+        throw new Error('MASTER_ADMIN_EMAIL and MASTER_ADMIN_PASSWORD must be set in environment variables');
+      }
       
       await newMasterAdmin.save();
       
       logger.info('Master Admin Created Successfully', {
-        email: 'carelinkdesk@gmail.com',
-        defaultPassword: 'admin123'
+        email: process.env.MASTER_ADMIN_EMAIL,
+        hasDefaultPassword: true
       });
     } else {
       logger.info('Master Admin already exists', {
