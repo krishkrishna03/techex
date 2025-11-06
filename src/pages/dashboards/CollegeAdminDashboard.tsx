@@ -137,7 +137,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
       setLoading(true);
       const page = 1;
       const limit = 50; // initial page size
-      const resp: any = await apiService.getCollegeUsers('faculty', page, limit);
+      const resp: any = await apiService.getCollegeUsers('faculty', undefined, page, limit);
 
       if (Array.isArray(resp)) {
         // older server response (full list)
@@ -163,7 +163,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
       setLoading(true);
       const page = 1;
       const limit = 50;
-      const resp: any = await apiService.getCollegeUsers('student', page, limit);
+      const resp: any = await apiService.getCollegeUsers('student', undefined, page, limit);
 
       if (Array.isArray(resp)) {
         setStudents(resp);
@@ -188,7 +188,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
     const nextPage = facultyPage + 1;
     try {
       setFormLoading(true);
-      const resp: any = await apiService.getCollegeUsers('faculty', nextPage, 50);
+      const resp: any = await apiService.getCollegeUsers('faculty', undefined, nextPage, 50);
       if (resp && resp.users) {
         setFaculty(prev => [...prev, ...resp.users]);
         setFacultyPage(resp.page || nextPage);
@@ -205,7 +205,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
     const nextPage = studentsPage + 1;
     try {
       setFormLoading(true);
-      const resp: any = await apiService.getCollegeUsers('student', nextPage, 50);
+      const resp: any = await apiService.getCollegeUsers('student', undefined, nextPage, 50);
       if (resp && resp.users) {
         setStudents(prev => [...prev, ...resp.users]);
         setStudentsPage(resp.page || nextPage);
