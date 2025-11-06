@@ -8,7 +8,7 @@ import NotificationForm from '../../components/Notifications/NotificationForm';
 import NotificationsPage from '../../components/Notifications/NotificationsPage';
 import BulkUploadForm from '../../components/Forms/BulkUploadForm';
 import CollegeTestReport from '../../components/Test/CollegeTestReport';
-import CategorizedTestTabs from '../../components/Test/CategorizedTestTabs';
+// import CategorizedTestTabs from '../../components/Test/CategorizedTestTabs';
 
 interface User {
   _id: string;
@@ -71,6 +71,10 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [faculty, setFaculty] = useState<User[]>([]);
   const [students, setStudents] = useState<User[]>([]);
+  const [facultyPage, setFacultyPage] = useState<number>(1);
+  const [studentsPage, setStudentsPage] = useState<number>(1);
+  const [facultyTotal, setFacultyTotal] = useState<number | null>(null);
+  const [studentsTotal, setStudentsTotal] = useState<number | null>(null);
   const [allTests, setAllTests] = useState<TestWithStatus[]>([]);
   const [activeTestType, setActiveTestType] = useState('Assessment');
   const [activeSubject, setActiveSubject] = useState('all');
@@ -128,8 +132,22 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
   const loadFaculty = async () => {
     try {
       setLoading(true);
-      const data = await apiService.getCollegeUsers('faculty') as User[];
-      setFaculty(data);
+      const page = 1;
+      const limit = 50; // initial page size
+      const resp: any = await apiService.getCollegeUsers('faculty', page, limit);
+
+      if (Array.isArray(resp)) {
+        // older server response (full list)
+        setFaculty(resp);
+        setFacultyTotal(resp.length);
+        setFacultyPage(1);
+      } else if (resp && resp.users) {
+        setFaculty(resp.users);
+        setFacultyTotal(resp.total);
+        setFacultyPage(resp.page || 1);
+      } else {
+        setFaculty([]);
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to load faculty');
     } finally {
@@ -140,12 +158,59 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
   const loadStudents = async () => {
     try {
       setLoading(true);
-      const data = await apiService.getCollegeUsers('student') as User[];
-      setStudents(data);
+      const page = 1;
+      const limit = 50;
+      const resp: any = await apiService.getCollegeUsers('student', page, limit);
+
+      if (Array.isArray(resp)) {
+        setStudents(resp);
+        setStudentsTotal(resp.length);
+        setStudentsPage(1);
+      } else if (resp && resp.users) {
+        setStudents(resp.users);
+        setStudentsTotal(resp.total);
+        setStudentsPage(resp.page || 1);
+      } else {
+        setStudents([]);
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to load students');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMoreFaculty = async () => {
+    if (facultyTotal !== null && faculty.length >= facultyTotal) return;
+    const nextPage = facultyPage + 1;
+    try {
+      setFormLoading(true);
+      const resp: any = await apiService.getCollegeUsers('faculty', nextPage, 50);
+      if (resp && resp.users) {
+        setFaculty(prev => [...prev, ...resp.users]);
+        setFacultyPage(resp.page || nextPage);
+      }
+    } catch (error) {
+      console.error('Failed to load more faculty', error);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const loadMoreStudents = async () => {
+    if (studentsTotal !== null && students.length >= studentsTotal) return;
+    const nextPage = studentsPage + 1;
+    try {
+      setFormLoading(true);
+      const resp: any = await apiService.getCollegeUsers('student', nextPage, 50);
+      if (resp && resp.users) {
+        setStudents(prev => [...prev, ...resp.users]);
+        setStudentsPage(resp.page || nextPage);
+      }
+    } catch (error) {
+      console.error('Failed to load more students', error);
+    } finally {
+      setFormLoading(false);
     }
   };
 
