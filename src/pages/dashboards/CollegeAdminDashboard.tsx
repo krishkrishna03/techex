@@ -8,7 +8,6 @@ import NotificationForm from '../../components/Notifications/NotificationForm';
 import NotificationsPage from '../../components/Notifications/NotificationsPage';
 import BulkUploadForm from '../../components/Forms/BulkUploadForm';
 import CollegeTestReport from '../../components/Test/CollegeTestReport';
-// import CategorizedTestTabs from '../../components/Test/CategorizedTestTabs';
 
 interface User {
   _id: string;
@@ -922,6 +921,58 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
   // Default dashboard view
   return (
     <div className="space-y-6">
+      {/* Student Assignment Timeline */}
+      <div className="bg-white rounded-lg shadow border">
+        <div className="px-6 py-4 border-b">
+          <h3 className="text-lg font-medium">Student Assignment Timeline</h3>
+          <p className="text-sm text-gray-500">Chronological view of student assignments to this college</p>
+        </div>
+        <div className="p-6">
+          <div className="relative">
+            {students.sort((a, b) => 
+              (b.assignedToCollege?.date?.getTime() || 0) - (a.assignedToCollege?.date?.getTime() || 0)
+            ).map((student, index) => (
+              <div key={student._id} className="mb-6 relative">
+                <div className="flex items-start">
+                  {/* Timeline Line */}
+                  <div className="absolute left-2.5 h-full w-0.5 bg-gray-200" 
+                       style={{ top: '20px' }}></div>
+                  
+                  {/* Timeline Point */}
+                  <div className="absolute w-5 h-5 rounded-full bg-blue-500 border-2 border-white"></div>
+                  
+                  {/* Content */}
+                  <div className="ml-8">
+                    <h4 className="text-sm font-medium text-gray-900">{student.name}</h4>
+                    <p className="text-xs text-gray-600">
+                      {student.branch} - {student.batch} - {student.section}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {student.assignedToCollege?.date ? (
+                        <>
+                          Assigned on {new Date(student.assignedToCollege.date).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                          {student.assignedToCollege.assignedBy && (
+                            <> by <span className="font-medium">Admin</span></>
+                          )}
+                        </>
+                      ) : (
+                        "Assignment date not recorded"
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      
       {dashboardData && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
