@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X } from 'lucide-react';
 import LoadingSpinner from '../UI/LoadingSpinner';
 import Loader3D from '../UI/Loader3D';
+import api from '../../services/api';
 
 interface BulkUploadFormProps {
   role: 'faculty' | 'student';
   onSubmit: (file: File, role: string) => Promise<any>;
   onClose: () => void;
-  loading: boolean;
 }
 
 interface UploadResult {
@@ -21,7 +21,7 @@ interface UploadResult {
   }>;
 }
 
-const BulkUploadForm: React.FC<BulkUploadFormProps> = ({ role, onSubmit, onClose, loading }) => {
+const BulkUploadForm: React.FC<BulkUploadFormProps> = ({ role, onSubmit, onClose }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -74,36 +74,7 @@ const BulkUploadForm: React.FC<BulkUploadFormProps> = ({ role, onSubmit, onClose
 
   const downloadTemplate = async () => {
     try {
-      // Use same default API base as ApiService to avoid mismatched URLs
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://college-sync-hub-tan.vercel.app/api';
-      const response = await fetch(`${apiUrl}/college/users/sample-template/${role}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (!response.ok) {
-        // Try to parse JSON error message if available
-        let msg = `Failed to download template (status ${response.status})`;
-        try {
-          const data = await response.json();
-          if (data && data.error) msg = data.error;
-        } catch (_) {
-          // ignore json parse errors
-        }
-        alert(msg);
-        return;
-      }
-
-      const blob = await response.blob();
-      // try to determine filename from response headers
-      const cd = response.headers.get('content-disposition');
-      let filename = `${role}_template.xlsx`;
-      if (cd) {
-        const match = /filename="?([^";]+)"?/.exec(cd);
-        if (match && match[1]) filename = match[1];
-      }
-
+      const { blob, filename } = await api.downloadSampleTemplate(role);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -112,9 +83,9 @@ const BulkUploadForm: React.FC<BulkUploadFormProps> = ({ role, onSubmit, onClose
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Template download error:', error);
-      alert('Template download failed. Check console for details.');
+      alert(error?.message || 'Template download failed. Check console for details.');
     }
   };
 
