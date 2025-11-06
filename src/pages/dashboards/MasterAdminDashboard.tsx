@@ -18,7 +18,7 @@ import PendingActions from '../../components/Dashboard/PendingActions';
 import PlatformGrowth from '../../components/Dashboard/PlatformGrowth';
 // import TestTabs from '../../components/Test/TestTabs';
 import ExportButton from '../../components/Dashboard/ExportButton';
-import GrowthChart from '../../components/Charts/GrowthChart';
+// import GrowthChart from '../../components/Charts/GrowthChart';
 // import CategorizedTestTabs from '../../components/Test/CategorizedTestTabs';
 import TestFormWithSections from '../../components/Test/TestFormWithSections';
 import CodingQuestionsList from '../../components/Coding/CodingQuestionsList';
@@ -1296,62 +1296,6 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
 
       {analyticsData?.recentActivity && (
         <RecentActivity activities={analyticsData.recentActivity} />
-      )}
-
-      {/* Growth Charts */}
-      {analyticsData && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <GrowthChart
-            title="User Growth Trend"
-            data={{
-              labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-              datasets: [
-                {
-                  label: 'Students',
-                  data: [
-                    Math.max(0, analyticsData.platformGrowth.newStudents - 15),
-                    Math.max(0, analyticsData.platformGrowth.newStudents - 10),
-                    Math.max(0, analyticsData.platformGrowth.newStudents - 5),
-                    analyticsData.platformGrowth.newStudents
-                  ],
-                  color: '#10B981'
-                },
-                {
-                  label: 'Faculty',
-                  data: [
-                    Math.max(0, analyticsData.platformGrowth.newFaculty - 5),
-                    Math.max(0, analyticsData.platformGrowth.newFaculty - 3),
-                    Math.max(0, analyticsData.platformGrowth.newFaculty - 1),
-                    analyticsData.platformGrowth.newFaculty
-                  ],
-                  color: '#3B82F6'
-                }
-              ]
-            }}
-            type="line"
-          />
-          
-          <GrowthChart
-            title="Subject-wise Test Distribution"
-            data={{
-              labels: ['Verbal', 'Reasoning', 'Technical', 'Arithmetic', 'Communication'],
-              datasets: [
-                {
-                  label: 'Tests Created',
-                  data: [
-                    testCounts?.bySubject?.Verbal || 0,
-                    testCounts?.bySubject?.Reasoning || 0,
-                    testCounts?.bySubject?.Technical || 0,
-                    testCounts?.bySubject?.Arithmetic || 0,
-                    testCounts?.bySubject?.Communication || 0
-                  ],
-                  color: '#8B5CF6'
-                }
-              ]
-            }}
-            type="bar"
-          />
-        </div>
       )}
 
       {/* Modals */}
