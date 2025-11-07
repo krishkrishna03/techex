@@ -43,12 +43,15 @@ interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
   collapsed?: boolean;
+  drawerOpen?: boolean;
+  onCloseDrawer?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, collapsed = false }): JSX.Element => {
+const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, collapsed = false, drawerOpen = false, onCloseDrawer }) : JSX.Element => {
   const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set());
   const [testCounts, setTestCounts] = useState<any>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [activeFlyout, setActiveFlyout] = useState<string | null>(null);
 
   useEffect(() => {
     loadTestCounts();
@@ -296,11 +299,33 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
     return testCounts[typeMap[testType]] || 0;
   };
 
+  // compute classes for off-canvas drawer on small screens and static sidebar on md+
+  const drawerVisible = drawerOpen;
+  const containerClass = `fixed inset-y-0 left-0 z-40 transform transition-transform duration-300 ease-in-out
+    ${drawerVisible ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 md:static`;
+
   return (
-    <aside
-      className="fixed md:sticky top-0 left-0 h-screen bg-gray-900 text-white transition-all duration-300 ease-in-out z-40"
-      style={{ width: collapsed ? '4rem' : '16rem' }}
-    >
+    <>
+      {/* Backdrop for mobile drawer */}
+      {drawerVisible && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => onCloseDrawer && onCloseDrawer()}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`${containerClass} bg-gray-900 text-white h-full w-64 md:w-64`}
+        style={{ width: collapsed ? '4rem' : undefined }}
+        role="navigation"
+        aria-label="Main navigation"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && drawerVisible) {
+            onCloseDrawer && onCloseDrawer();
+          }
+        }}
+      >
       <div className="p-4 h-full flex flex-col overflow-hidden">
         <div className="mb-6 shrink-0">
           <h2 className="text-xl font-bold flex items-center gap-2">
@@ -326,7 +351,15 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
                       onMouseLeave={() => collapsed && setHoveredItem(null)}
                     >
                       <button
-                        onClick={() => handleTestsClick(item.id)}
+                        onClick={() => {
+                          // Touch/click friendly: toggle flyout when collapsed or toggle openDropdowns when expanded
+                          if (collapsed) {
+                            setActiveFlyout(prev => (prev === item.id ? null : item.id));
+                          } else {
+                            handleTestsClick(item.id);
+                          }
+                        }}
+                        aria-expanded={openDropdowns.has(item.id) || activeFlyout === item.id}
                         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all duration-200 ${
                           activeTab === item.id ||
                           (item.id === 'tests' && (activeTab === 'tests' || activeTab === 'assigned-tests')) ||
@@ -345,12 +378,18 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
                         {!collapsed && (openDropdowns.has(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
                       </button>
 
-                      {collapsed && hoveredItem === item.id && item.subItems && (
+                      {/* Flyout: show when collapsed & (hovered or activeFlyout) */}
+                      {(collapsed && (hoveredItem === item.id || activeFlyout === item.id)) && item.subItems && (
                         <div className="absolute left-full top-0 ml-2 w-48 bg-gray-800 text-white rounded shadow-lg z-50">
                           {item.subItems.map((sub) => (
                             <button
                               key={sub.id}
-                              onClick={() => handleSubItemClick(sub.testType || '', item.id)}
+                              onClick={() => {
+                                handleSubItemClick(sub.testType || '', item.id);
+                                setActiveFlyout(null);
+                                // close drawer on mobile
+                                onCloseDrawer && onCloseDrawer();
+                              }}
                               className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700"
                             >
                               {sub.label}
@@ -387,7 +426,10 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
                   </>
                 ) : (
                   <button
-                    onClick={() => onTabChange(item.id)}
+                    onClick={() => {
+                      onTabChange(item.id);
+                      onCloseDrawer && onCloseDrawer();
+                    }}
                     className={`w-full flex items-center px-3 py-2.5 rounded-lg text-left transition-all duration-200 ${
                       activeTab === item.id
                         ? 'bg-blue-600 text-white'
@@ -409,6 +451,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
         </nav>
       </div>
     </aside>
+    </>
   );
 };
 
