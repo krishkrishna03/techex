@@ -297,100 +297,118 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
   };
 
   return (
-    <div className={`bg-gray-900 text-white ${collapsed ? 'w-16' : 'w-64'} min-h-screen p-4 transition-all duration-150`}>
-      <div className="mb-8">
-        <h2 className="text-xl font-bold flex items-center gap-2">
-          <img
-            src="/logo.png"       // 👈 replace this with your actual file name (e.g., /college_logo.png)
-            alt="Logo"
-            className={`w-6 h-6 ${collapsed ? 'mx-auto' : 'mr-2'}`}
-          />
-          {!collapsed && <span>PlanTechx</span>}
+    <aside
+      className="fixed md:sticky top-0 left-0 h-screen bg-gray-900 text-white transition-all duration-300 ease-in-out z-40"
+      style={{ width: collapsed ? '4rem' : '16rem' }}
+    >
+      <div className="p-4 h-full flex flex-col overflow-hidden">
+        <div className="mb-6 shrink-0">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <img
+              src="/logo.png"
+              alt="Logo"
+              className={`w-8 h-8 ${collapsed ? 'mx-auto' : 'mr-2'} transition-all duration-300`}
+            />
+            {!collapsed && <span className="transition-opacity duration-300">PlanTechx</span>}
+          </h2>
+        </div>
 
-        </h2>
-      </div>
+        <nav className="space-y-2 overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+          {visibleItems.map((item: SidebarItem) => {
+            const isTestParent = !!item.subItems;
+            return (
+              <div key={item.id}>
+                {isTestParent ? (
+                  <>
+                    <div
+                      className="relative"
+                      onMouseEnter={() => collapsed && setHoveredItem(item.id)}
+                      onMouseLeave={() => collapsed && setHoveredItem(null)}
+                    >
+                      <button
+                        onClick={() => handleTestsClick(item.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all duration-200 ${
+                          activeTab === item.id ||
+                          (item.id === 'tests' && (activeTab === 'tests' || activeTab === 'assigned-tests')) ||
+                          (item.id === 'my-tests' && activeTab === 'my-tests')
+                            ? 'bg-blue-600 text-white'
+                            : 'text-gray-300 hover:text-white hover:bg-gray-800'
+                        }`}
+                        title={collapsed ? item.label : undefined}
+                      >
+                        <div className={`flex items-center gap-3 ${collapsed ? 'justify-center w-full' : ''}`}>
+                          <span className={`${collapsed ? 'w-6 h-6 flex items-center justify-center' : ''}`}>
+                            {item.icon}
+                          </span>
+                          {!collapsed && <span className="transition-opacity duration-200">{item.label}</span>}
+                        </div>
+                        {!collapsed && (openDropdowns.has(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />)}
+                      </button>
 
-      <nav className="space-y-2">
-        {visibleItems.map((item: SidebarItem) => (
-          <div key={item.id}>
-            {item.subItems ? (
-              <>
-                <div className="relative"
-                  onMouseEnter={() => collapsed && setHoveredItem(item.id)}
-                  onMouseLeave={() => collapsed && setHoveredItem(null)}
-                >
+                      {collapsed && hoveredItem === item.id && item.subItems && (
+                        <div className="absolute left-full top-0 ml-2 w-48 bg-gray-800 text-white rounded shadow-lg z-50">
+                          {item.subItems.map((sub) => (
+                            <button
+                              key={sub.id}
+                              onClick={() => handleSubItemClick(sub.testType || '', item.id)}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700"
+                            >
+                              {sub.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {openDropdowns.has(item.id) && item.subItems && !collapsed && (
+                      <div className="ml-4 mt-1 space-y-1">
+                        {item.subItems.map((subItem: SubItem) => {
+                          const count = getTestCount(subItem.testType || '');
+                          return (
+                            <button
+                              key={subItem.id}
+                              onClick={() => handleSubItemClick(subItem.testType || '', item.id)}
+                              className="w-full flex items-center justify-between px-4 py-2 rounded-lg text-left text-sm transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-gray-600" />
+                                {subItem.label}
+                              </div>
+                              {testCounts && (
+                                <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs font-bold rounded-full">
+                                  {count}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                ) : (
                   <button
-                    onClick={() => handleTestsClick(item.id)}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-colors ${activeTab === item.id || (item.id === 'tests' && (activeTab === 'tests' || activeTab === 'assigned-tests')) || (item.id === 'my-tests' && activeTab === 'my-tests')
+                    onClick={() => onTabChange(item.id)}
+                    className={`w-full flex items-center px-3 py-2.5 rounded-lg text-left transition-all duration-200 ${
+                      activeTab === item.id
                         ? 'bg-blue-600 text-white'
                         : 'text-gray-300 hover:text-white hover:bg-gray-800'
-                      }`}
+                    }`}
                     title={collapsed ? item.label : undefined}
                   >
-                    <div className="flex items-center gap-3">
-                      {item.icon}
-                      {!collapsed && item.label}
+                    <div className={`flex items-center gap-3 ${collapsed ? 'justify-center w-full' : ''}`}>
+                      <span className={`${collapsed ? 'w-6 h-6 flex items-center justify-center' : ''}`}>
+                        {item.icon}
+                      </span>
+                      {!collapsed && <span className="transition-opacity duration-200">{item.label}</span>}
                     </div>
-                    {openDropdowns.has(item.id) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </button>
-
-                  {/* Flyout when collapsed and hovered */}
-                  {collapsed && hoveredItem === item.id && item.subItems && (
-                    <div className="absolute left-full top-0 ml-2 w-48 bg-gray-800 text-white rounded shadow-lg z-50">
-                      {item.subItems.map((sub) => (
-                        <button
-                          key={sub.id}
-                          onClick={() => handleSubItemClick(sub.testType || '', item.id)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-gray-700"
-                        >
-                          {sub.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {openDropdowns.has(item.id) && item.subItems && !collapsed && (
-                  <div className="ml-4 mt-1 space-y-1">
-                    {item.subItems.map((subItem: SubItem) => {
-                      const count = getTestCount(subItem.testType || '');
-                      return (
-                        <button
-                          key={subItem.id}
-                          onClick={() => handleSubItemClick(subItem.testType || '', item.id)}
-                          className="w-full flex items-center justify-between px-4 py-2 rounded-lg text-left text-sm transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-gray-600"></div>
-                            {subItem.label}
-                          </div>
-                          {testCounts && (
-                            <span className="px-2 py-0.5 bg-gray-700 text-gray-300 text-xs font-bold rounded-full">
-                              {count}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
                 )}
-              </>
-            ) : (
-              <button
-                onClick={() => onTabChange(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${activeTab === item.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800'
-                  }`}
-                title={collapsed ? item.label : undefined}
-              >
-                {item.icon}
-                {!collapsed && item.label}
-              </button>
-            )}
-          </div>
-        ))}
-      </nav>
-    </div>
+              </div>
+            );
+          })}
+        </nav>
+      </div>
+    </aside>
   );
 };
 
