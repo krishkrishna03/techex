@@ -146,8 +146,8 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Floating toggle to ensure sidebar can be toggled even if Navbar not visible */}
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      {/* Mobile menu toggle button - only visible on small screens */}
       {!isTestMode && (
         <button
           onClick={() => {
@@ -163,28 +163,41 @@ const Dashboard: React.FC = () => {
           <Menu size={20} />
         </button>
       )}
-      {!isTestMode && (
-      <Sidebar
-        userRole={state.user.role}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        collapsed={!isSidebarOpen}
-      />
-      )}
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Sidebar */}
       {!isTestMode && (
-        <Navbar
-        title={getDashboardTitle()}
-        onProfileClick={() => setShowProfile(true)}
-        onTabChange={setActiveTab}
-        onToggleSidebar={() => setIsSidebarOpen(v => !v)}
+        <Sidebar
+          userRole={state.user.role}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          collapsed={!isSidebarOpen}
         />
       )}
 
-      <main className={`flex-1 overflow-x-hidden overflow-y-auto ${isTestMode ? '' : 'p-6'}`}>
-        {renderDashboardContent()}
-      </main>
+      {/* Main content */}
+      <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ease-in-out 
+        ${!isTestMode ? 'md:ml-0' : ''}`}>
+        {!isTestMode && (
+          <Navbar
+            title={getDashboardTitle()}
+            onProfileClick={() => setShowProfile(true)}
+            onTabChange={setActiveTab}
+            onToggleSidebar={() => {
+              setIsSidebarOpen(v => {
+                const next = !v;
+                try { localStorage.setItem('sidebarCollapsed', String(!next)); } catch (e) {}
+                return next;
+              });
+            }}
+          />
+        )}
+
+        <main className={`flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 
+          ${isTestMode ? '' : 'p-4 md:p-6'}`}>
+          <div className={`container mx-auto ${isTestMode ? '' : 'max-w-7xl'}`}>
+            {renderDashboardContent()}
+          </div>
+        </main>
       </div>
 
       {!isTestMode && (
