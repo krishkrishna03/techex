@@ -26,7 +26,10 @@ import apiService from '../services/api';
 const Dashboard: React.FC = () => {
   const { state } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  // isSidebarOpen controls desktop expanded/collapsed state
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // isDrawerOpen controls mobile off-canvas drawer visibility
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   // Persist sidebar open/closed in localStorage so users keep preference across reloads
   useEffect(() => {
     try {
@@ -149,14 +152,9 @@ const Dashboard: React.FC = () => {
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Mobile menu toggle button - only visible on small screens */}
       {!isTestMode && (
+        // Mobile floating toggle: opens the drawer
         <button
-          onClick={() => {
-            setIsSidebarOpen(v => {
-              const next = !v;
-              try { localStorage.setItem('sidebarCollapsed', String(!next)); } catch (e) {}
-              return next;
-            });
-          }}
+          onClick={() => setIsDrawerOpen(v => !v)}
           className="fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md text-gray-600 hover:bg-gray-100 md:hidden"
           title="Toggle menu"
         >
@@ -169,8 +167,14 @@ const Dashboard: React.FC = () => {
         <Sidebar
           userRole={state.user.role}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            // close drawer on mobile after navigation
+            setIsDrawerOpen(false);
+          }}
           collapsed={!isSidebarOpen}
+          drawerOpen={isDrawerOpen}
+          onCloseDrawer={() => setIsDrawerOpen(false)}
         />
       )}
 
@@ -183,6 +187,8 @@ const Dashboard: React.FC = () => {
             onProfileClick={() => setShowProfile(true)}
             onTabChange={setActiveTab}
             onToggleSidebar={() => {
+              // Toggle desktop collapse by default
+              // If on small screens, user will use the floating button which controls drawer
               setIsSidebarOpen(v => {
                 const next = !v;
                 try { localStorage.setItem('sidebarCollapsed', String(!next)); } catch (e) {}
