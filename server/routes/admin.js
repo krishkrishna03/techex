@@ -1,676 +1,1601 @@
 const express = require('express');
-const User = require('../models/User');
+const multer = require('multer');
+const path = require('path');
+const Test = require('../models/Test');
+const TestAssignment = require('../models/TestAssignment');
+const TestAttempt = require('../models/TestAttempt');
 const College = require('../models/College');
-const PendingEmail = require('../models/PendingEmail');
+const User = require('../models/User');
+const CodingQuestion = require('../models/CodingQuestion');
 const { auth, authorize } = require('../middleware/auth');
 const emailService = require('../utils/emailService');
-const PasswordGenerator = require('../utils/passwordGenerator');
+const PDFExtractor = require('../utils/pdfExtractor');
+const FileExtractor = require('../utils/fileExtractor');
 const { body, validationResult } = require('express-validator');
 const logger = require('../middleware/logger');
 
 const router = express.Router();
-// Determine if we're running tests. Mocha does not always set NODE_ENV, so also
-// check npm lifecycle event and mocha worker env variable.
-const skipAuthForTests = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || !!process.env.MOCHA_WORKER_ID;
 
-// Admin export endpoint - accepts POST { format: 'csv'|'json', filename, data }
-// During tests we allow skipping auth so supertest can call this endpoint without tokens
-router.post('/export', skipAuthForTests ? (req, res, next) => next() : auth, skipAuthForTests ? (req, res, next) => next() : authorize('master_admin'), async (req, res) => {
-  try {
-    const { format = 'csv', filename = 'export', data } = req.body;
-
-    if (!data) return res.status(400).json({ error: 'No data provided for export' });
-
-    if (format === 'json') {
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
-      return res.send(JSON.stringify(data));
+// Configure multer for file uploads (memory storage)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'), false);
     }
-
-    // CSV streaming
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
-
-    // If top-level is an object with multiple sections, try to find an array
-    let rows = [];
-    if (Array.isArray(data)) {
-      rows = data;
-    } else if (typeof data === 'object') {
-      // pick first array value
-      const firstArray = Object.values(data).find(v => Array.isArray(v));
-      if (firstArray) rows = firstArray;
-      else rows = [data];
-    }
-
-    if (rows.length === 0) {
-      res.write('\n');
-      return res.end();
-    }
-
-    const keys = Object.keys(rows[0]);
-    res.write(keys.join(',') + '\n');
-
-    for (const row of rows) {
-      const line = keys.map(k => {
-        const v = row[k] === undefined || row[k] === null ? '' : String(row[k]).replace(/"/g, '""');
-        return `"${v}"`;
-      }).join(',');
-      res.write(line + '\n');
-    }
-
-    res.end();
-  } catch (error) {
-    logger.errorLog(error, { context: 'Export error' });
-    res.status(500).json({ error: 'Server error' });
+  },
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
   }
 });
 
-// Metrics: activity summary - non-PII
-router.get('/metrics/activity-summary', auth, authorize('master_admin'), async (req, res) => {
-  try {
-    const User = require('../models/User');
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-    const activeStudents = await User.countDocuments({ role: 'student', lastLogin: { $gte: fifteenMinutesAgo } });
-
-    const masterAdmin = await User.findOne({ role: 'master_admin' }).select('lastLogin loginCount name email');
-
-    res.json({
-      activeStudents,
-      adminLoginSummary: masterAdmin ? {
-        lastLogin: masterAdmin.lastLogin,
-        totalLogins: masterAdmin.loginCount || 0
-      } : { lastLogin: null, totalLogins: 0 }
-    });
-  } catch (error) {
-    logger.errorLog(error, { context: 'Activity summary error' });
-    res.status(500).json({ error: 'Server error' });
+const fileUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/json', 'text/csv', 'application/vnd.ms-excel'];
+    if (allowedTypes.includes(file.mimetype) || file.originalname.endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JSON and CSV files are allowed'), false);
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
   }
 });
 
-// Create college (Master Admin only)
-router.post('/colleges', auth, authorize('master_admin'), [
-  body('name').trim().isLength({ min: 2 }),
-  body('code').trim().isLength({ min: 2 }).toUpperCase(),
-  body('email').isEmail().normalizeEmail(),
-  body('address').trim().isLength({ min: 10 })
+// Create test (Master Admin only)
+router.post('/', auth, authorize('master_admin'), [
+  // Add debug logging for request body
+  (req, res, next) => {
+    console.log('Full request body:', JSON.stringify(req.body, null, 2));
+    next();
+  },
+  body('testName').trim().isLength({ min: 3 }).withMessage('Test name must be at least 3 characters'),
+  body('testDescription').trim().isLength({ min: 10 }).withMessage('Test description must be at least 10 characters'),
+  body('subject').optional().isIn(['Verbal', 'Reasoning', 'Technical', 'Arithmetic', 'Communication']).withMessage('Invalid subject'),
+  body('testType').optional().isIn(['Assessment', 'Practice', 'Assignment', 'Mock Test', 'Specific Company Test']).withMessage('Invalid test type'),
+  body('topics').optional().isArray().withMessage('Topics must be an array'),
+  body('difficulty').optional().isIn(['Easy', 'Medium', 'Hard']).withMessage('Invalid difficulty'),
+  body('hasSections').optional().isBoolean().withMessage('hasSections must be a boolean'),
+  body('sections').optional().isArray().withMessage('Sections must be an array'),
+  body('numberOfQuestions').optional().custom((value, { req }) => {
+    if (req.body.hasSections === true || req.body.hasSections === 'true') return true;
+    if (req.body.hasCodingSection === true || req.body.hasCodingSection === 'true') {
+      // For coding tests, numberOfQuestions can be 0
+      if (value === undefined || value === null || value < 0 || value > 100) {
+        throw new Error('Number of questions must be between 0 and 100 for coding tests');
+      }
+    } else {
+      // For regular MCQ tests
+      if (value === undefined || value === null || value < 1 || value > 100) {
+        throw new Error('Number of questions must be between 1 and 100');
+      }
+    }
+    return true;
+  }),
+  body('marksPerQuestion').optional().custom((value, { req }) => {
+    if (req.body.hasSections === true || req.body.hasSections === 'true') return true;
+    if (value === undefined || value === null || value < 1 || value > 10) {
+      throw new Error('Marks per question must be between 1 and 10');
+    }
+    return true;
+  }),
+  body('duration').optional().custom((value, { req }) => {
+    if (req.body.hasSections === true || req.body.hasSections === 'true') return true;
+    if (value === undefined || value === null || value < 5 || value > 300) {
+      throw new Error('Duration must be between 5 and 300 minutes');
+    }
+    return true;
+  }),
+  body('startDateTime').isISO8601().withMessage('Invalid start date format'),
+  body('endDateTime').isISO8601().withMessage('Invalid end date format'),
+  body('questions').optional().isArray().withMessage('Questions must be an array')
 ], async (req, res) => {
   try {
+    console.log('Received test creation request');
+    console.log('Request body keys:', Object.keys(req.body));
+    console.log('Test name:', req.body.testName);
+    console.log('Questions count:', req.body.questions?.length);
+    console.log('Has coding section:', req.body.hasCodingSection);
+    console.log('Coding questions:', req.body.codingQuestions);
+    console.log('Validation result:', validationResult(req));
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { name, code, email, address } = req.body;
-
-    // Check if college code or email already exists
-    const existingCollege = await College.findOne({
-      $or: [{ code }, { email }]
-    });
-
-    if (existingCollege) {
-      return res.status(400).json({ 
-        error: 'College code or email already exists' 
+      console.log('Validation errors:', JSON.stringify(errors.array(), null, 2));
+      return res.status(400).json({
+        error: 'Validation failed',
+        errors: errors.array()
       });
     }
 
-    // Create college
-    const college = new College({ name, code, email, address });
-    await college.save();
+    let {
+      testName,
+      testDescription,
+      subject,
+      testType = 'Assessment',
+      companyName,
+      topics = [],
+      difficulty = 'Medium',
+      hasSections = false,
+      sections = [],
+      numberOfQuestions,
+      marksPerQuestion,
+      duration,
+      startDateTime,
+      endDateTime,
+      questions,
+      hasCodingSection = false,
+      codingQuestions = []
+    } = req.body;
 
-    // Generate password for college admin
-    const password = PasswordGenerator.generateSimple(10);
+    // Normalize codingQuestions: accept { id } or { questionId } from frontend
+    const normalizedCodingQuestions = (codingQuestions || []).map(cq => ({
+      questionId: cq.questionId || cq.id || cq._id,
+      points: typeof cq.points !== 'undefined' ? cq.points : (cq.points || 100),
+      timeLimit: typeof cq.timeLimit !== 'undefined' ? cq.timeLimit : (cq.time_limit || cq.timeLimit || 3600)
+    }));
 
-    // Create college admin user
-    const collegeAdmin = new User({
-      name: `${name} Administrator`,
-      email,
-      password,
-      role: 'college_admin',
-      collegeId: college._id
-    });
+    // Validate companyName for Specific Company Test
+    if (testType === 'Specific Company Test' && (!companyName || !companyName.trim())) {
+      return res.status(400).json({
+        error: 'Company name is required for Specific Company tests'
+      });
+    }
 
-    await collegeAdmin.save();
-
-    // Update college with admin ID
-    college.adminId = collegeAdmin._id;
-    await college.save();
-
-    // Send credentials via email
-    const emailResult = await emailService.sendLoginCredentials(
-      email,
-      collegeAdmin.name,
-      password,
-      'college_admin',
-      name
-    );
-
-    // Send confirmation email to college (non-PII)
-    try {
-      const confirmResult = await emailService.sendCollegeCreated(email, name, collegeAdmin.name, { signupMessage: 'Your account and college have been setup. Please use the credentials emailed to access the admin dashboard.' });
-      if (!confirmResult.success) {
-        await PendingEmail.create({
-          type: 'college_created',
-          recipientEmail: email,
-          recipientName: collegeAdmin.name,
-          userId: collegeAdmin._id,
-          data: { collegeId: college._id, collegeName: name },
-          status: 'failed',
-          attempts: 1,
-          lastAttemptAt: new Date(),
-          error: confirmResult.error || 'Confirmation email failed'
+    // Validate coding section if enabled
+    if (hasCodingSection) {
+      if (!normalizedCodingQuestions || normalizedCodingQuestions.length === 0) {
+        return res.status(400).json({
+          error: 'At least one coding question is required when coding section is enabled'
         });
       }
-    } catch (err) {
-      logger.errorLog(err, { context: 'Failed to send confirmation email' });
+
+      // Validate coding question points and timeLimit
+      for (const cq of normalizedCodingQuestions) {
+        if (typeof cq.points !== 'undefined' && (cq.points < 0 || cq.points > 1000)) {
+          return res.status(400).json({
+            error: 'Coding question points must be between 0 and 1000'
+          });
+        }
+        if (typeof cq.timeLimit !== 'undefined' && (cq.timeLimit < 0 || cq.timeLimit > 7200)) {
+          return res.status(400).json({
+            error: 'Coding question time limit must be between 0 and 7200 seconds'
+          });
+        }
+      }
+
+      // Validate coding question IDs exist
+      for (const cq of normalizedCodingQuestions) {
+        if (!cq.questionId) {
+          return res.status(400).json({
+            error: 'Each coding question must have a questionId or id'
+          });
+        }
+
+        const exists = await CodingQuestion.findById(cq.questionId);
+        if (!exists) {
+          return res.status(400).json({
+            error: `Coding question with ID ${cq.questionId} not found`
+          });
+        }
+      }
     }
 
-    if (!emailResult.success) {
-      await PendingEmail.create({
-        type: 'login_credentials',
-        recipientEmail: email,
-        recipientName: collegeAdmin.name,
-        userId: collegeAdmin._id,
-        data: {
-          email,
-          password,
-          role: 'college_admin',
-          collegeName: name
-        },
-        status: 'failed',
-        attempts: 1,
-        lastAttemptAt: new Date(),
-        error: emailResult.error || 'Email sending failed'
-      });
+    // Validate based on test structure
+    if (hasSections) {
+      // Validate sections
+      if (!sections || sections.length === 0) {
+        return res.status(400).json({
+          error: 'At least one section is required when sections are enabled'
+        });
+      }
+
+      // Validate each section and its questions
+      for (let i = 0; i < sections.length; i++) {
+        const section = sections[i];
+
+        if (!section.sectionName || !section.sectionName.trim()) {
+          return res.status(400).json({
+            error: `Section ${i + 1} must have a name`
+          });
+        }
+
+        if (!section.questions || section.questions.length !== section.numberOfQuestions) {
+          return res.status(400).json({
+            error: `Section "${section.sectionName}" has ${section.questions?.length || 0} questions but expects ${section.numberOfQuestions}`
+          });
+        }
+
+        // Validate each question in the section
+        for (let j = 0; j < section.questions.length; j++) {
+          const question = section.questions[j];
+          if (!question.questionText || !question.options || !question.correctAnswer) {
+            return res.status(400).json({
+              error: `Question ${j + 1} in section "${section.sectionName}" is incomplete`
+            });
+          }
+
+          if (!question.options.A || !question.options.B || !question.options.C || !question.options.D) {
+            return res.status(400).json({
+              error: `Question ${j + 1} in section "${section.sectionName}" must have all four options`
+            });
+          }
+
+          if (!['A', 'B', 'C', 'D'].includes(question.correctAnswer)) {
+            return res.status(400).json({
+              error: `Question ${j + 1} in section "${section.sectionName}" must have a valid correct answer`
+            });
+          }
+
+          // Ensure marks are set
+          question.marks = section.marksPerQuestion;
+        }
+      }
+    } else {
+      // Validate non-sectioned test questions
+      if (!hasCodingSection) {
+        // Only validate question count for non-coding tests
+        if (!questions || questions.length !== numberOfQuestions) {
+          console.log('Question count mismatch:', questions?.length, 'vs', numberOfQuestions);
+          return res.status(400).json({
+            error: `Number of questions (${questions?.length || 0}) must match the specified count (${numberOfQuestions})`
+          });
+        }
+      } else {
+        // For coding tests, questions are optional
+        numberOfQuestions = questions?.length || 0;
+      }
+
+      // Validate each question
+      for (let i = 0; i < questions.length; i++) {
+        const question = questions[i];
+        if (!question.questionText || !question.options || !question.correctAnswer) {
+          console.log('Question validation failed at index:', i, question);
+          return res.status(400).json({
+            error: `Question ${i + 1} is incomplete`
+          });
+        }
+
+        if (!question.options.A || !question.options.B || !question.options.C || !question.options.D) {
+          console.log('Question options validation failed at index:', i, question.options);
+          return res.status(400).json({
+            error: `Question ${i + 1} must have all four options (A, B, C, D)`
+          });
+        }
+
+        if (!['A', 'B', 'C', 'D'].includes(question.correctAnswer)) {
+          console.log('Correct answer validation failed at index:', i, question.correctAnswer);
+          return res.status(400).json({
+            error: `Question ${i + 1} must have a valid correct answer (A, B, C, or D)`
+          });
+        }
+
+        // Add marks to each question
+        question.marks = marksPerQuestion;
+      }
     }
+
+    console.log('Creating test with validated data');
+    console.log('Start DateTime received:', startDateTime);
+    console.log('End DateTime received:', endDateTime);
+
+    const test = new Test({
+      testName,
+      testDescription,
+      subject,
+      testType,
+      companyName: companyName || null,
+      topics,
+      difficulty,
+      hasSections,
+      sections: hasSections ? sections : [],
+      numberOfQuestions: hasSections ? 0 : numberOfQuestions,
+      marksPerQuestion: hasSections ? 0 : marksPerQuestion,
+      duration: hasSections ? 0 : duration,
+      startDateTime: new Date(startDateTime),
+      endDateTime: new Date(endDateTime),
+      questions: hasSections ? [] : questions,
+      hasCodingSection,
+      codingQuestions: hasCodingSection ? normalizedCodingQuestions.map(cq => ({
+        questionId: cq.questionId,
+        points: cq.points || 100,
+        timeLimit: cq.timeLimit || 3600
+      })) : [],
+      createdBy: req.user._id
+    });
+
+    await test.save();
+    console.log('Test created successfully:', test._id);
 
     res.status(201).json({
-      message: 'College created successfully',
-      college: {
-        id: college._id,
-        name: college.name,
-        code: college.code,
-        email: college.email,
-        address: college.address,
-        createdAt: college.createdAt
-      },
-      emailSent: emailResult.success
-    });
-
-  } catch (error) {
-    logger.errorLog(error, { context: 'Create college error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get all colleges (Master Admin only)
-router.get('/colleges', auth, authorize('master_admin'), async (req, res) => {
-  try {
-    const colleges = await College.find()
-      .populate('adminId', 'name email hasLoggedIn lastLogin')
-      .sort({ createdAt: -1 });
-
-    const collegesWithStats = await Promise.all(
-      colleges.map(async (college) => {
-        await college.updateStats();
-        return {
-          id: college._id,
-          name: college.name,
-          code: college.code,
-          email: college.email,
-          address: college.address,
-          totalFaculty: college.totalFaculty,
-          totalStudents: college.totalStudents,
-          adminInfo: college.adminId ? {
-            name: college.adminId.name,
-            email: college.adminId.email,
-            hasLoggedIn: college.adminId.hasLoggedIn,
-            lastLogin: college.adminId.lastLogin
-          } : null,
-          createdAt: college.createdAt,
-          isActive: college.isActive
-        };
-      })
-    );
-
-    res.json(collegesWithStats);
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get college statistics (Master Admin only)
-router.get('/stats', auth, authorize('master_admin'), async (req, res) => {
-  try {
-    const totalColleges = await College.countDocuments({ isActive: true });
-    const totalFaculty = await User.countDocuments({ role: 'faculty', isActive: true });
-    const totalStudents = await User.countDocuments({ role: 'student', isActive: true });
-    
-    const recentLogins = await User.find({
-      role: { $in: ['college_admin', 'faculty', 'student'] },
-      lastLogin: { $exists: true }
-    })
-    .populate('collegeId', 'name')
-    .sort({ lastLogin: -1 })
-    .limit(10)
-    .select('name email role lastLogin collegeId');
-
-    res.json({
-      totalColleges,
-      totalFaculty,
-      totalStudents,
-      recentLogins
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Toggle college status (Master Admin only)
-router.put('/colleges/:id/toggle-status', auth, authorize('master_admin'), async (req, res) => {
-  try {
-    const college = await College.findById(req.params.id);
-    if (!college) {
-      return res.status(404).json({ error: 'College not found' });
-    }
-
-    college.isActive = !college.isActive;
-    await college.save();
-
-    // Also toggle all users in this college
-    await User.updateMany(
-      { collegeId: college._id },
-      { isActive: college.isActive }
-    );
-
-    res.json({ 
-      message: `College ${college.isActive ? 'activated' : 'deactivated'} successfully`,
-      isActive: college.isActive 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Update college details (Master Admin only)
-router.put('/colleges/:id', auth, authorize('master_admin'), [
-  body('name').trim().isLength({ min: 2 }),
-  body('email').isEmail().normalizeEmail(),
-  body('address').trim().isLength({ min: 10 })
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { name, email, address } = req.body;
-    const collegeId = req.params.id;
-
-    // Check if email is already used by another college
-    const existingCollege = await College.findOne({
-      email,
-      _id: { $ne: collegeId }
-    });
-
-    if (existingCollege) {
-      return res.status(400).json({ error: 'Email already used by another college' });
-    }
-
-    const college = await College.findByIdAndUpdate(
-      collegeId,
-      { name, email, address },
-      { new: true, runValidators: true }
-    );
-
-    if (!college) {
-      return res.status(404).json({ error: 'College not found' });
-    }
-
-    // Update college admin email if it matches college email
-    await User.findOneAndUpdate(
-      { collegeId, role: 'college_admin' },
-      { email }
-    );
-
-    res.json({
-      message: 'College updated successfully',
-      college
-    });
-
-  } catch (error) {
-    logger.errorLog(error, { context: 'Update college error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Delete college (Master Admin only)
-router.delete('/colleges/:id', auth, authorize('master_admin'), async (req, res) => {
-  try {
-    const collegeId = req.params.id;
-
-    // Check if college has users
-    const userCount = await User.countDocuments({ collegeId });
-    if (userCount > 0) {
-      return res.status(400).json({ 
-        error: 'Cannot delete college with existing users. Please remove all users first.' 
-      });
-    }
-
-    const college = await College.findByIdAndDelete(collegeId);
-    if (!college) {
-      return res.status(404).json({ error: 'College not found' });
-    }
-
-    res.json({ message: 'College deleted successfully' });
-
-  } catch (error) {
-    logger.errorLog(error, { context: 'Delete college error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Update Master Admin email
-router.put('/update-email', auth, authorize('master_admin'), [
-  body('email').isEmail().normalizeEmail()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { email } = req.body;
-
-    // Check if email is already used by another user
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email is already in use' });
-    }
-
-    // Update Master Admin
-    const masterAdmin = await User.findOne({ role: 'master_admin' });
-    if (!masterAdmin) {
-      return res.status(404).json({ error: 'Master Admin not found' });
-    }
-
-    masterAdmin.email = email;
-    await masterAdmin.save();
-
-    res.json({ 
-      message: 'Master Admin email updated successfully',
-      email: masterAdmin.email
-    });
-
-  } catch (error) {
-    logger.errorLog(error, { context: 'Update Master Admin email error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get Master Admin profile
-router.get('/profile', auth, authorize('master_admin'), async (req, res) => {
-  try {
-    const masterAdmin = await User.findById(req.user._id).select('-password');
-    res.json(masterAdmin);
-  } catch (error) {
-    logger.errorLog(error, { context: 'Get profile error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Update Master Admin profile
-router.put('/profile', auth, authorize('master_admin'), [
-  body('name').optional().trim().isLength({ min: 2 }),
-  body('phoneNumber').optional().isMobilePhone()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const updates = {};
-    const allowedFields = ['name', 'phoneNumber'];
-
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
+      message: 'Test created successfully',
+      test: {
+        id: test._id,
+        testName: test.testName,
+        testType: test.testType,
+        companyName: test.companyName,
+        subject: test.subject,
+        topics: test.topics,
+        difficulty: test.difficulty,
+        numberOfQuestions: test.numberOfQuestions,
+        totalMarks: test.totalMarks,
+        duration: test.duration,
+        startDateTime: test.startDateTime,
+        endDateTime: test.endDateTime,
+        createdAt: test.createdAt
       }
     });
 
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user._id,
-      updates,
-      { new: true, runValidators: true }
-    ).select('-password');
-
-    res.json({
-      message: 'Profile updated successfully',
-      user: updatedUser
-    });
   } catch (error) {
-    logger.errorLog(error, { context: 'Update profile error' });
+    logger.errorLog(error, { context: 'Create test error' });
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Get test analytics/report for Master Admin
-router.get('/tests/:testId/report', auth, authorize('master_admin'), async (req, res) => {
+// Extract questions from PDF
+router.post('/extract-pdf', auth, authorize('master_admin'), upload.single('pdf'), async (req, res) => {
   try {
-    const { testId } = req.params;
-    const Test = require('../models/Test');
-    const TestAssignment = require('../models/TestAssignment');
-    const TestAttempt = require('../models/TestAttempt');
-    const College = require('../models/College');
+    if (!req.file) {
+      return res.status(400).json({ error: 'PDF file is required' });
+    }
 
-    // Get test details
+    console.log('Processing PDF file:', req.file.originalname, 'Size:', req.file.size);
+
+    const questions = await PDFExtractor.extractMCQs(req.file.buffer);
+    
+    if (questions.length === 0) {
+      return res.status(400).json({ 
+        error: 'No valid MCQ questions found in the PDF. Please ensure your PDF contains:\n• Numbered questions (1., 2., etc.)\n• Options labeled A), B), C), D)\n• Clear answer indicators (Answer: A, Correct: B, etc.)' 
+      });
+    }
+
+    console.log('Successfully extracted questions:', questions.length);
+
+    res.json({
+      message: `Successfully extracted ${questions.length} questions`,
+      questions: questions.map(q => ({
+        ...q,
+        marks: 1 // Default marks, can be changed later
+      }))
+    });
+
+  } catch (error) {
+    logger.errorLog(error, { context: 'PDF extraction error' });
+    res.status(500).json({ 
+      error: error.message || 'Failed to process PDF. Please ensure the PDF is not corrupted and contains readable text.' 
+    });
+  }
+});
+
+// Generate sample questions
+router.get('/sample-questions/:subject', auth, authorize('master_admin'), async (req, res) => {
+  try {
+    const { subject } = req.params;
+    const count = parseInt(req.query.count) || 5;
+
+    const questions = PDFExtractor.generateSampleQuestions(count, subject);
+
+    res.json({
+      message: `Generated ${questions.length} sample questions for ${subject}`,
+      questions: questions.map(q => ({
+        ...q,
+        marks: 1
+      }))
+    });
+
+  } catch (error) {
+    logger.errorLog(error, { context: 'Sample questions error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Extract questions from JSON/CSV file
+router.post('/extract-file', auth, authorize('master_admin'), fileUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'File is required' });
+    }
+
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+
+    let questions = [];
+
+    if (fileExtension === '.json') {
+      questions = await FileExtractor.extractFromJSON(req.file.buffer);
+    } else if (fileExtension === '.csv') {
+      questions = await FileExtractor.extractFromCSV(req.file.buffer);
+    } else {
+      return res.status(400).json({ error: 'Unsupported file type' });
+    }
+
+    res.json({
+      message: `Successfully extracted ${questions.length} questions from ${fileExtension.toUpperCase()} file`,
+      questions: questions.map(q => ({
+        ...q,
+        marks: 1
+      }))
+    });
+
+  } catch (error) {
+    logger.errorLog(error, { context: 'File extraction error' });
+    res.status(500).json({
+      error: error.message || 'Failed to extract questions from file',
+      details: error.toString()
+    });
+  }
+});
+
+// Get all tests (Master Admin only)
+router.get('/', auth, authorize('master_admin'), async (req, res) => {
+  try {
+    const { testType, subject } = req.query;
+    
+    let query = { isActive: true };
+    
+    if (testType && testType !== 'all') {
+      query.testType = testType;
+    }
+    
+    if (subject && subject !== 'all') {
+      query.subject = subject;
+    }
+    
+    const tests = await Test.find(query)
+      .populate('createdBy', 'name email')
+      .populate('codingQuestions.questionId')
+      .sort({ createdAt: -1 });
+
+    // Get attempt counts for all tests
+    const attemptCounts = await TestAttempt.aggregate([
+      {
+        $match: {
+          isActive: true
+        }
+      },
+      {
+        $group: {
+          _id: '$testId',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Create a map of testId -> attemptCount
+    const attemptCountMap = new Map();
+    attemptCounts.forEach(ac => {
+      attemptCountMap.set(ac._id.toString(), ac.count);
+    });
+
+    // Add attemptCount to each test
+    const testsWithAttempts = tests.map(test => {
+      const testObj = test.toObject();
+      testObj.attemptCount = attemptCountMap.get(test._id.toString()) || 0;
+      return testObj;
+    });
+
+    res.json(testsWithAttempts);
+  } catch (error) {
+    logger.errorLog(error, { context: 'Get tests error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get test by ID with questions (Master Admin only)
+router.get('/:id', auth, authorize('master_admin'), async (req, res) => {
+  try {
+    const test = await Test.findById(req.params.id)
+      .populate('createdBy', 'name email')
+      .populate('codingQuestions.questionId');
+
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+
+    res.json(test);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Assign test to college (Master Admin only)
+router.post('/:id/assign-college', auth, authorize('master_admin'), [
+  body('collegeIds').isArray({ min: 1 })
+], async (req, res) => {
+  try {
+    const { collegeIds } = req.body;
+    const testId = req.params.id;
+
     const test = await Test.findById(testId);
     if (!test) {
       return res.status(404).json({ error: 'Test not found' });
     }
 
-    // Get all college assignments
-    const collegeAssignments = await TestAssignment.find({
-      testId,
-      assignedTo: 'college',
-      isActive: true
-    }).populate('collegeId', 'name code');
+    const colleges = await College.find({ _id: { $in: collegeIds }, isActive: true });
+    if (colleges.length !== collegeIds.length) {
+      return res.status(400).json({ error: 'Some colleges not found or inactive' });
+    }
 
-    // Get all student assignments across all colleges
-    const studentAssignments = await TestAssignment.find({
-      testId,
-      assignedTo: 'students',
-      isActive: true
+    const assignments = [];
+    for (const college of colleges) {
+      // Check if already assigned
+      const existingAssignment = await TestAssignment.findOne({
+        testId,
+        collegeId: college._id,
+        isActive: true
+      });
+
+      if (!existingAssignment) {
+        const assignment = new TestAssignment({
+          testId,
+          collegeId: college._id,
+          assignedBy: req.user._id,
+          assignedTo: 'college'
+        });
+
+        await assignment.save();
+        assignments.push(assignment);
+
+        // Send email notification
+        const collegeAdmin = await User.findById(college.adminId);
+        if (collegeAdmin) {
+          await emailService.sendTestAssignmentNotification(
+            collegeAdmin.email,
+            collegeAdmin.name,
+            test.testName,
+            college.name,
+            test.startDateTime,
+            test.endDateTime
+          );
+        }
+      }
+    }
+
+    res.json({
+      message: `Test assigned to ${assignments.length} colleges successfully`,
+      assignments: assignments.length
     });
 
-    // Get all student IDs
-    const studentIds = studentAssignments.flatMap(sa =>
-      sa.studentFilters.specificStudents || []
+  } catch (error) {
+    logger.errorLog(error, { context: 'Assign test error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get colleges assigned to a specific test (Master Admin)
+router.get('/:id/assigned-colleges', auth, authorize('master_admin'), async (req, res) => {
+  try {
+    const testId = req.params.id;
+
+    const assignments = await TestAssignment.find({
+      testId: testId,
+      assignedTo: 'college',
+      isActive: true
+    })
+    .populate('collegeId', 'name code email')
+    .select('collegeId status assignedAt');
+
+    res.json(assignments);
+  } catch (error) {
+    logger.errorLog(error, { context: 'Get test assigned colleges error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all tests with assignment status for college (College Admin and Faculty)
+router.get('/college/all-tests', auth, authorize('college_admin', 'faculty'), async (req, res) => {
+  try {
+    const { testType, subject } = req.query;
+
+    let query = {};
+    if (testType && testType !== 'all') {
+      query.testType = testType;
+    }
+    if (subject && subject !== 'all') {
+      query.subject = subject;
+    }
+
+    const allTests = await Test.find(query).sort({ createdAt: -1 });
+
+    const assignments = await TestAssignment.find({
+      collegeId: req.user.collegeId,
+      assignedTo: 'college',
+      isActive: true
+    }).select('testId status assignedAt assignedBy').populate('assignedBy', 'name email');
+
+    // Get student assignments
+    const studentAssignments = await TestAssignment.find({
+      collegeId: req.user.collegeId,
+      assignedTo: 'students',
+      isActive: true
+    }).select('testId studentFilters');
+
+    // Get attempt counts
+    const TestAttempt = require('../models/TestAttempt');
+    const attemptCounts = await TestAttempt.aggregate([
+      {
+        $match: {
+          collegeId: req.user.collegeId,
+          isActive: true
+        }
+      },
+      {
+        $group: {
+          _id: '$testId',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const assignmentMap = new Map();
+    assignments.forEach(assignment => {
+      if (assignment.testId) {
+        assignmentMap.set(assignment.testId.toString(), {
+          status: assignment.status,
+          assignedAt: assignment.assignedAt,
+          assignedBy: assignment.assignedBy,
+          assignmentId: assignment._id
+        });
+      }
+    });
+
+    // Build student assignment info map
+    const studentAssignmentMap = new Map();
+    for (const sa of studentAssignments) {
+      const testIdStr = sa.testId.toString();
+      if (!studentAssignmentMap.has(testIdStr)) {
+        studentAssignmentMap.set(testIdStr, {
+          studentIds: new Set(),
+          branches: new Set(),
+          batches: new Set()
+        });
+      }
+
+      const data = studentAssignmentMap.get(testIdStr);
+      if (sa.studentFilters && sa.studentFilters.specificStudents) {
+        sa.studentFilters.specificStudents.forEach(sid => {
+          data.studentIds.add(sid.toString());
+        });
+      }
+    }
+
+    // Get student details for branches and batches
+    for (const [testId, data] of studentAssignmentMap.entries()) {
+      if (data.studentIds.size > 0) {
+        const students = await User.find({
+          _id: { $in: Array.from(data.studentIds) }
+        }).select('branch batch');
+
+        students.forEach(student => {
+          if (student.branch) data.branches.add(student.branch);
+          if (student.batch) data.batches.add(student.batch);
+        });
+      }
+    }
+
+    // Build attempt count map
+    const attemptCountMap = new Map();
+    attemptCounts.forEach(ac => {
+      attemptCountMap.set(ac._id.toString(), ac.count);
+    });
+
+    const testsWithStatus = allTests.map(test => {
+      const assignment = assignmentMap.get(test._id.toString());
+      const studentInfo = studentAssignmentMap.get(test._id.toString());
+      const attemptCount = attemptCountMap.get(test._id.toString()) || 0;
+
+      return {
+        ...test.toObject(),
+        assignmentStatus: assignment ? assignment.status : 'not_assigned',
+        assignedAt: assignment ? assignment.assignedAt : null,
+        assignedBy: assignment ? assignment.assignedBy : null,
+        assignmentId: assignment ? assignment.assignmentId : null,
+        assignedStudentCount: studentInfo ? studentInfo.studentIds.size : 0,
+        attemptCount: attemptCount,
+        testBranches: studentInfo ? Array.from(studentInfo.branches) : [],
+        testBatches: studentInfo ? Array.from(studentInfo.batches) : []
+      };
+    });
+
+    res.json(testsWithStatus);
+  } catch (error) {
+    logger.errorLog(error, { context: 'Get all tests for college error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get assigned tests for college (College Admin and Faculty)
+router.get('/college/assigned', auth, authorize('college_admin', 'faculty'), async (req, res) => {
+  try {
+    const { testType, subject } = req.query;
+
+    // Get assignments and tests in parallel
+    const [assignments, tests] = await Promise.all([
+      TestAssignment.find({
+        collegeId: req.user.collegeId,
+        assignedTo: 'college',
+        isActive: true
+      })
+      .populate('testId')
+      .populate('assignedBy', 'name email')
+      .sort({ createdAt: -1 }),
+      Test.find({}, '_id') // Get just test IDs for validation
+    ]);
+
+    // Create a Set of valid test IDs
+    const validTestIds = new Set(tests.map(t => t._id.toString()));
+
+    // Filter out assignments where testId is null or test no longer exists
+    let filteredAssignments = assignments.filter(assignment => 
+      assignment.testId && validTestIds.has(assignment.testId._id.toString())
     );
 
-    // Get all attempts
-    const attempts = await TestAttempt.find({
-      testId,
-      studentId: { $in: studentIds }
-    }).populate('studentId', 'name email idNumber collegeId')
-      .populate('collegeId', 'name code');
+    if (testType && testType !== 'all') {
+      filteredAssignments = filteredAssignments.filter(assignment =>
+        assignment.testId && assignment.testId.testType === testType
+      );
+    }
 
-    // Calculate global statistics
-    const totalCollegesAssigned = collegeAssignments.length;
-    const totalCollegesAccepted = collegeAssignments.filter(ca => ca.status === 'accepted').length;
-    const totalStudentsAssigned = studentIds.length;
-    const totalStudentsCompleted = attempts.length;
-    const completionRate = totalStudentsAssigned > 0
-      ? (totalStudentsCompleted / totalStudentsAssigned * 100)
-      : 0;
+    if (subject && subject !== 'all') {
+      filteredAssignments = filteredAssignments.filter(assignment =>
+        assignment.testId && assignment.testId.subject === subject
+      );
+    }
 
-    const scores = attempts.map(a => a.marksObtained);
-    const totalMarksArray = attempts.map(a => test.totalMarks);
+    res.json(filteredAssignments);
+  } catch (error) {
+    logger.errorLog(error, { context: 'Get assigned tests error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
-    // Calculate average score as percentage
-    const percentages = attempts.map(a => (a.marksObtained / test.totalMarks) * 100);
-    const averageScore = percentages.length > 0
-      ? (percentages.reduce((a, b) => a + b, 0) / percentages.length)
-      : 0;
+// Accept/Reject test assignment (College Admin)
+router.put('/assignment/:id/status', auth, authorize('college_admin'), [
+  body('status').isIn(['accepted', 'rejected'])
+], async (req, res) => {
+  try {
+    const { status } = req.body;
+    const assignment = await TestAssignment.findOne({
+      _id: req.params.id,
+      collegeId: req.user.collegeId
+    });
 
-    const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
-    const lowestScore = scores.length > 0 ? Math.min(...scores) : 0;
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
 
-    const passPercentage = test.totalMarks > 0 ? (test.totalMarks * 0.4) : 0;
-    const passedStudents = attempts.filter(a => a.marksObtained >= passPercentage).length;
-    const passRate = totalStudentsCompleted > 0
-      ? (passedStudents / totalStudentsCompleted * 100)
-      : 0;
+    assignment.status = status;
+    if (status === 'accepted') {
+      assignment.acceptedAt = new Date();
+    } else {
+      assignment.rejectedAt = new Date();
+    }
 
-    // College-wise statistics
-    const collegeResults = await Promise.all(
-      collegeAssignments.map(async (assignment) => {
-        const collegeStudentAssignments = studentAssignments.filter(
-          sa => sa.collegeId.toString() === assignment.collegeId._id.toString()
-        );
+    await assignment.save();
 
-        const collegeStudentIds = collegeStudentAssignments.flatMap(sa =>
-          sa.studentFilters.specificStudents || []
-        );
+    res.json({
+      message: `Test assignment ${status} successfully`,
+      assignment
+    });
 
-        const collegeAttempts = attempts.filter(a =>
-          collegeStudentIds.some(id => id.toString() === a.studentId._id.toString())
-        );
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
-        const collegePercentages = collegeAttempts.map(a => (a.marksObtained / test.totalMarks) * 100);
-        const collegeAvg = collegePercentages.length > 0
-          ? (collegePercentages.reduce((a, b) => a + b, 0) / collegePercentages.length)
-          : 0;
+// Assign test to students (College Admin)
+router.post('/assignment/:id/assign-students', auth, authorize('college_admin'), [
+  body('branches').optional().isArray(),
+  body('batches').optional().isArray(),
+  body('sections').optional().isArray(),
+  body('specificStudents').optional().isArray()
+], async (req, res) => {
+  try {
+    const { branches, batches, sections, specificStudents } = req.body;
+    const assignmentId = req.params.id;
+
+    const assignment = await TestAssignment.findOne({
+      _id: assignmentId,
+      collegeId: req.user.collegeId,
+      status: 'accepted'
+    }).populate('testId');
+
+    if (!assignment) {
+      return res.status(404).json({ error: 'Assignment not found or not accepted' });
+    }
+
+    // Build student query
+    let studentQuery = {
+      collegeId: req.user.collegeId,
+      role: 'student',
+      isActive: true
+    };
+
+    if (branches && branches.length > 0) {
+      studentQuery.branch = { $in: branches };
+    }
+    if (batches && batches.length > 0) {
+      studentQuery.batch = { $in: batches };
+    }
+    if (sections && sections.length > 0) {
+      studentQuery.section = { $in: sections };
+    }
+    if (specificStudents && specificStudents.length > 0) {
+      studentQuery._id = { $in: specificStudents };
+    }
+
+    const students = await User.find(studentQuery);
+
+    if (students.length === 0) {
+      return res.status(400).json({ error: 'No students found matching the criteria' });
+    }
+
+    // Create student assignments
+    const studentAssignments = [];
+    for (const student of students) {
+      const studentAssignment = new TestAssignment({
+        testId: assignment.testId._id,
+        collegeId: req.user.collegeId,
+        assignedBy: req.user._id,
+        assignedTo: 'students',
+        studentFilters: {
+          specificStudents: [student._id]
+        },
+        status: 'accepted' // Students don't need to accept
+      });
+
+      await studentAssignment.save();
+      studentAssignments.push(studentAssignment);
+
+      // Send email notification to student
+      await emailService.sendTestAssignmentToStudent(
+        student.email,
+        student.name,
+        assignment.testId.testName,
+        assignment.testId.startDateTime,
+        assignment.testId.endDateTime,
+        assignment.testId.duration
+      );
+    }
+
+    res.json({
+      message: `Test assigned to ${students.length} students successfully`,
+      studentsAssigned: students.length
+    });
+
+  } catch (error) {
+    logger.errorLog(error, { context: 'Assign to students error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get assigned tests for student
+router.get('/student/assigned', auth, authorize('student'), async (req, res) => {
+  try {
+    const { testType, subject } = req.query;
+    
+    // Get assignments, tests, and attempts in parallel
+    const [assignments, tests] = await Promise.all([
+      TestAssignment.find({
+        'studentFilters.specificStudents': req.user._id,
+        assignedTo: 'students',
+        status: 'accepted',
+        isActive: true
+      })
+      .populate({
+        path: 'testId',
+        populate: {
+          path: 'codingQuestions.questionId'
+        }
+      })
+      .sort({ createdAt: -1 }),
+      Test.find({}, '_id') // Get just test IDs for validation
+    ]);
+
+    // Create a Set of valid test IDs
+    const validTestIds = new Set(tests.map(t => t._id.toString()));
+
+    // Filter out assignments where testId is null or test no longer exists
+    const validAssignments = assignments.filter(assignment => 
+      assignment.testId && validTestIds.has(assignment.testId._id.toString())
+    );
+
+    // Check if student has already attempted each test
+    const testsWithAttempts = await Promise.all(
+      validAssignments.map(async (assignment) => {
+        const attempt = await TestAttempt.findOne({
+          testId: assignment.testId._id,
+          studentId: req.user._id
+        });
 
         return {
-          collegeName: assignment.collegeId.name,
-          collegeCode: assignment.collegeId.code,
-          assigned: collegeStudentIds.length,
-          attempted: collegeAttempts.length,
-          averageScore: collegeAvg
+          ...assignment.toObject(),
+          hasAttempted: !!attempt,
+          attempt: attempt
         };
       })
     );
 
+    // Filter by test type and subject if provided
+    let filteredTests = testsWithAttempts;
+    
+    if (testType && testType !== 'all') {
+      filteredTests = filteredTests.filter(test => 
+        test.testId.testType === testType
+      );
+    }
+    
+    if (subject && subject !== 'all') {
+      filteredTests = filteredTests.filter(test => 
+        test.testId.subject === subject
+      );
+    }
+    res.json(filteredTests);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Start test (Student)
+router.post('/:id/start', auth, authorize('student'), async (req, res) => {
+  try {
+    const testId = req.params.id;
+    
+    // Check if test is assigned to student
+    const assignment = await TestAssignment.findOne({
+      testId,
+      'studentFilters.specificStudents': req.user._id,
+      status: 'accepted',
+      isActive: true
+    });
+
+    if (!assignment) {
+      return res.status(403).json({ error: 'Test not assigned to you' });
+    }
+
+    // Check if already attempted
+    const existingAttempt = await TestAttempt.findOne({
+      testId,
+      studentId: req.user._id
+    });
+
+    if (existingAttempt) {
+      return res.status(400).json({ error: 'Test already attempted' });
+    }
+
+    const test = await Test.findById(testId).populate('codingQuestions.questionId');
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+
+    // Check if test is currently active
+    const now = new Date();
+    if (now < test.startDateTime) {
+      return res.status(400).json({ error: 'Test has not started yet' });
+    }
+    if (now > test.endDateTime) {
+      return res.status(400).json({ error: 'Test has ended' });
+    }
+
+    // Return test questions (include correctAnswer for Practice tests only)
+    const testForStudent = {
+      _id: test._id,
+      testName: test.testName,
+      testDescription: test.testDescription,
+      subject: test.subject,
+      testType: test.testType,
+      hasSections: test.hasSections,
+      numberOfQuestions: test.numberOfQuestions,
+      marksPerQuestion: test.marksPerQuestion,
+      totalMarks: test.totalMarks,
+      duration: test.duration,
+      startDateTime: test.startDateTime,
+      endDateTime: test.endDateTime,
+      hasCodingSection: test.hasCodingSection
+    };
+
+    // Handle sectioned tests
+    if (test.hasSections && test.sections && test.sections.length > 0) {
+      testForStudent.sections = test.sections.map(section => ({
+        _id: section._id,
+        sectionName: section.sectionName,
+        sectionDuration: section.sectionDuration,
+        numberOfQuestions: section.numberOfQuestions,
+        marksPerQuestion: section.marksPerQuestion,
+        questions: section.questions.map(q => {
+          const questionData = {
+            _id: q._id,
+            questionText: q.questionText,
+            options: q.options,
+            marks: q.marks,
+            // include optional image fields so students can see images
+            questionImageUrl: q.questionImageUrl || undefined,
+            optionImages: q.optionImages || undefined
+          };
+
+          // Include correct answer for Practice tests
+          if (test.testType === 'Practice') {
+            questionData.correctAnswer = q.correctAnswer;
+          }
+
+          return questionData;
+        })
+      }));
+    } else {
+      // Handle non-sectioned tests
+      testForStudent.questions = test.questions.map(q => {
+        const questionData = {
+          _id: q._id,
+          questionText: q.questionText,
+          options: q.options,
+          marks: q.marks,
+          // expose optional image fields for student UI
+          questionImageUrl: q.questionImageUrl || undefined,
+          optionImages: q.optionImages || undefined
+        };
+
+        // Include correct answer for Practice tests
+        if (test.testType === 'Practice') {
+          questionData.correctAnswer = q.correctAnswer;
+        }
+
+        return questionData;
+      });
+    }
+
+    // Add coding questions if enabled
+    if (test.hasCodingSection && test.codingQuestions && test.codingQuestions.length > 0) {
+      testForStudent.codingQuestions = test.codingQuestions.map(cq => ({
+        _id: cq.questionId._id,
+        title: cq.questionId.title,
+        description: cq.questionId.description,
+        difficulty: cq.questionId.difficulty,
+        constraints: cq.questionId.constraints,
+        input_format: cq.questionId.input_format,
+        output_format: cq.questionId.output_format,
+        time_limit: cq.questionId.time_limit,
+        memory_limit: cq.questionId.memory_limit,
+        supported_languages: cq.questionId.supported_languages,
+        sample_input: cq.questionId.sample_input,
+        sample_output: cq.questionId.sample_output,
+        explanation: cq.questionId.explanation,
+        tags: cq.questionId.tags,
+        points: cq.points,
+        timeLimit: cq.timeLimit
+      }));
+    }
+
     res.json({
-      totalAssigned: totalStudentsAssigned,
-      totalAttempted: totalStudentsCompleted,
-      averageScore: averageScore,
-      completionRate: completionRate,
-      collegeResults: collegeResults
+      message: 'Test started successfully',
+      test: testForStudent,
+      startTime: now
     });
 
   } catch (error) {
-    logger.errorLog(error, { context: 'Get test report error' });
+    logger.errorLog(error, { context: 'Start test error' });
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Submit test (Student)
+router.post('/:id/submit', auth, authorize('student'), [
+  body('answers').isArray({ min: 1 }),
+  body('startTime').isISO8601(),
+  body('timeSpent').isInt({ min: 0 }),
+  body('violations').optional().isInt({ min: 0 })
+], async (req, res) => {
+  try {
+    const { answers, startTime, timeSpent, violations = 0 } = req.body;
+    const testId = req.params.id;
+
+    // Verify test assignment
+    const assignment = await TestAssignment.findOne({
+      testId,
+      'studentFilters.specificStudents': req.user._id,
+      status: 'accepted',
+      isActive: true
+    });
+
+    if (!assignment) {
+      return res.status(403).json({ error: 'Test not assigned to you' });
+    }
+
+    // Check if already attempted
+    const existingAttempt = await TestAttempt.findOne({
+      testId,
+      studentId: req.user._id
+    });
+
+    if (existingAttempt) {
+      return res.status(400).json({ error: 'Test already submitted' });
+    }
+
+    const test = await Test.findById(testId);
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+
+    // Get all questions from test (handle both sectioned and non-sectioned)
+    let allQuestions = [];
+    if (test.hasSections && test.sections && test.sections.length > 0) {
+      test.sections.forEach(section => {
+        allQuestions = allQuestions.concat(section.questions);
+      });
+    } else {
+      allQuestions = test.questions;
+    }
+
+    // Calculate results
+    const processedAnswers = [];
+    for (let i = 0; i < answers.length; i++) {
+      const answer = answers[i];
+      const question = allQuestions.find(q => q._id.toString() === answer.questionId);
+
+      if (!question) {
+        return res.status(400).json({ error: `Invalid question ID: ${answer.questionId}` });
+      }
+
+      const isCorrect = question.correctAnswer === answer.selectedAnswer;
+      const marksObtained = isCorrect ? question.marks : 0;
+
+      processedAnswers.push({
+        questionId: question._id,
+        selectedAnswer: answer.selectedAnswer,
+        isCorrect,
+        marksObtained,
+        timeSpent: answer.timeSpent || 0
+      });
+    }
+
+    // Determine status based on violations
+    let status = 'completed';
+    if (violations >= 3) {
+      status = 'auto-submitted-violations';
+    }
+
+    // Create test attempt
+    const testAttempt = new TestAttempt({
+      testId,
+      studentId: req.user._id,
+      collegeId: req.user.collegeId,
+      startTime: new Date(startTime),
+      endTime: new Date(),
+      timeSpent,
+      answers: processedAnswers,
+      totalMarks: test.totalMarks,
+      violations,
+      status
+    });
+
+    await testAttempt.save();
+
+    // Return results based on test type
+    const responseData = {
+      message: 'Test submitted successfully',
+      testType: test.testType,
+      results: {
+        totalMarks: testAttempt.totalMarks,
+        marksObtained: testAttempt.marksObtained,
+        percentage: testAttempt.percentage,
+        correctAnswers: testAttempt.correctAnswers,
+        incorrectAnswers: testAttempt.incorrectAnswers,
+        timeSpent: testAttempt.timeSpent,
+        submittedAt: testAttempt.createdAt
+      }
+    };
+
+    // For Practice tests, include immediate feedback
+    if (test.testType === 'Practice') {
+      responseData.instantFeedback = processedAnswers.map((answer, index) => ({
+        questionId: answer.questionId,
+        question: test.questions[index],
+        selectedAnswer: answer.selectedAnswer,
+        correctAnswer: test.questions[index].correctAnswer,
+        isCorrect: answer.isCorrect,
+        explanation: `The correct answer is ${test.questions[index].correctAnswer}: ${test.questions[index].options[test.questions[index].correctAnswer]}`
+      }));
+    }
+
+    res.json(responseData);
+
+  } catch (error) {
+    logger.errorLog(error, { context: 'Submit test error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get test results for student
+router.get('/:id/results', auth, authorize('student'), async (req, res) => {
+  try {
+    const testId = req.params.id;
+    
+    const attempt = await TestAttempt.findOne({
+      testId,
+      studentId: req.user._id
+    }).populate('testId', 'testName subject totalMarks questions');
+
+    if (!attempt) {
+      return res.status(404).json({ error: 'Test attempt not found' });
+    }
+
+    // Include correct answers for review
+    const detailedResults = {
+      ...attempt.toObject(),
+      questionAnalysis: attempt.testId.questions.map(question => {
+        const studentAnswer = attempt.answers.find(a => 
+          a.questionId.toString() === question._id.toString()
+        );
+        
+        return {
+          questionText: question.questionText,
+          options: question.options,
+          correctAnswer: question.correctAnswer,
+          studentAnswer: studentAnswer?.selectedAnswer,
+          isCorrect: studentAnswer?.isCorrect,
+          marksObtained: studentAnswer?.marksObtained,
+          marks: question.marks
+        };
+      })
+    };
+
+    res.json(detailedResults);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update test (Master Admin only)
+router.put('/:id', auth, authorize('master_admin'), [
+  body('testName').trim().isLength({ min: 3 }),
+  body('testDescription').trim().isLength({ min: 10 }),
+  body('subject').optional().isIn(['Verbal', 'Reasoning', 'Technical', 'Arithmetic', 'Communication']),
+  body('testType').optional().isIn(['Assessment', 'Practice', 'Assignment', 'Mock Test', 'Specific Company Test']),
+  body('hasSections').optional().isBoolean().withMessage('hasSections must be a boolean'),
+  body('sections').optional().isArray().withMessage('Sections must be an array'),
+  body('numberOfQuestions').optional().custom((value, { req }) => {
+    if (req.body.hasSections === true || req.body.hasSections === 'true') return true;
+    if (value === undefined || value === null || value < 1 || value > 100) {
+      throw new Error('Number of questions must be between 1 and 100');
+    }
+    return true;
+  }),
+  body('marksPerQuestion').optional().custom((value, { req }) => {
+    if (req.body.hasSections === true || req.body.hasSections === 'true') return true;
+    if (value === undefined || value === null || value < 1 || value > 10) {
+      throw new Error('Marks per question must be between 1 and 10');
+    }
+    return true;
+  }),
+  body('duration').optional().custom((value, { req }) => {
+    if (req.body.hasSections === true || req.body.hasSections === 'true') return true;
+    if (value === undefined || value === null || value < 5 || value > 300) {
+      throw new Error('Duration must be between 5 and 300 minutes');
+    }
+    return true;
+  }),
+  body('startDateTime').isISO8601(),
+  body('endDateTime').isISO8601(),
+  body('questions').optional().isArray()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const testId = req.params.id;
+    const updateData = req.body;
+
+    // Validate based on test structure
+    if (updateData.hasSections) {
+      // Validate sections
+      if (!updateData.sections || updateData.sections.length === 0) {
+        return res.status(400).json({
+          error: 'At least one section is required when sections are enabled'
+        });
+      }
+
+      // Validate each section
+      for (let i = 0; i < updateData.sections.length; i++) {
+        const section = updateData.sections[i];
+
+        if (!section.questions || section.questions.length !== section.numberOfQuestions) {
+          return res.status(400).json({
+            error: `Section "${section.sectionName}" has ${section.questions?.length || 0} questions but expects ${section.numberOfQuestions}`
+          });
+        }
+
+        // Set marks for each question in section
+        section.questions.forEach(question => {
+          question.marks = section.marksPerQuestion;
+        });
+      }
+    } else {
+      // Validate non-sectioned test questions
+      if (!updateData.questions || updateData.questions.length !== updateData.numberOfQuestions) {
+        return res.status(400).json({
+          error: `Number of questions (${updateData.questions?.length || 0}) must match the specified count (${updateData.numberOfQuestions})`
+        });
+      }
+
+      // Add marks to each question
+      updateData.questions.forEach(question => {
+        question.marks = updateData.marksPerQuestion;
+      });
+    }
+
+    const test = await Test.findByIdAndUpdate(
+      testId,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+
+    res.json({
+      message: 'Test updated successfully',
+      test
+    });
+
+  } catch (error) {
+    logger.errorLog(error, { context: 'Update test error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete test (Master Admin only)
+router.delete('/:id', auth, authorize('master_admin'), async (req, res) => {
+  try {
+    const testId = req.params.id;
+    
+    // Delete all related assignments first
+    await TestAssignment.deleteMany({ testId });
+    
+    // Delete all related attempts
+    await TestAttempt.deleteMany({ testId });
+
+    // Delete test attempts data used for reports
+    await Promise.all([
+      TestAssignment.updateMany(
+        { testId },
+        { $set: { isActive: false } }
+      ),
+      TestAttempt.updateMany(
+        { testId },
+        { $set: { isActive: false } }
+      )
+    ]);
+
+    // Finally delete the test
+    const test = await Test.findByIdAndDelete(testId);
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+
+    res.json({ message: 'Test deleted successfully' });
+
+  } catch (error) {
+    logger.errorLog(error, { context: 'Delete test error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get student test reports (Student)
+router.get('/student/reports', auth, authorize('student'), async (req, res) => {
+  try {
+    const { testType, subject } = req.query;
+
+    let query = {
+      studentId: req.user._id,
+      status: 'completed'
+    };
+
+    const attempts = await TestAttempt.find(query)
+      .populate({
+        path: 'testId',
+        select: 'testName testType subject totalMarks difficulty companyName questions'
+      })
+      .sort({ createdAt: -1 });
+
+    let filteredAttempts = attempts;
+
+    if (testType && testType !== 'all') {
+      filteredAttempts = filteredAttempts.filter(attempt =>
+        attempt.testId && attempt.testId.testType === testType
+      );
+    }
+
+    if (subject && subject !== 'all') {
+      filteredAttempts = filteredAttempts.filter(attempt =>
+        attempt.testId && attempt.testId.subject === subject
+      );
+    }
+
+    const reports = filteredAttempts.map(attempt => ({
+      _id: attempt._id,
+      testId: {
+        testName: attempt.testId?.testName || 'Unknown Test',
+        testType: attempt.testId?.testType || 'Unknown',
+        subject: attempt.testId?.subject || 'Unknown',
+        companyName: attempt.testId?.companyName,
+        difficulty: attempt.testId?.difficulty,
+        totalMarks: attempt.totalMarks,
+        questions: attempt.testId?.questions || []
+      },
+      studentId: {
+        name: req.user.name,
+        email: req.user.email,
+        batch: req.user.batch,
+        branch: req.user.branch,
+        section: req.user.section
+      },
+      testName: attempt.testId?.testName || 'Unknown Test',
+      testType: attempt.testId?.testType || 'Unknown',
+      subject: attempt.testId?.subject || 'Unknown',
+      companyName: attempt.testId?.companyName,
+      difficulty: attempt.testId?.difficulty,
+      totalMarks: attempt.totalMarks,
+      marksObtained: attempt.marksObtained,
+      percentage: attempt.percentage,
+      correctAnswers: attempt.correctAnswers,
+      incorrectAnswers: attempt.incorrectAnswers,
+      timeSpent: attempt.timeSpent,
+      status: attempt.percentage >= 40 ? 'Pass' : 'Fail',
+      completedAt: attempt.createdAt,
+      startTime: attempt.startTime,
+      endTime: attempt.endTime,
+      createdAt: attempt.createdAt,
+      questionAnalysis: attempt.testId?.questions?.map((question, index) => {
+        const studentAnswer = attempt.answers.find(a =>
+          a.questionId.toString() === question._id.toString()
+        );
+
+        return {
+          questionText: question.questionText,
+          options: question.options,
+          correctAnswer: question.correctAnswer,
+          studentAnswer: studentAnswer?.selectedAnswer || 'Not answered',
+          isCorrect: studentAnswer?.isCorrect || false,
+          marksObtained: studentAnswer?.marksObtained || 0,
+          marks: question.marks
+        };
+      }) || []
+    }));
+
+    res.json(reports);
+  } catch (error) {
+    logger.errorLog(error, { context: 'Get student reports error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get all students test reports (Faculty and College Admin)
+router.get('/faculty/student-reports', auth, authorize('faculty', 'college_admin'), async (req, res) => {
+  try {
+    const { testType, subject, studentName, batch, branch, section } = req.query;
+
+    let userQuery = {
+      collegeId: req.user.collegeId,
+      role: 'student',
+      isActive: true
+    };
+
+    if (batch) userQuery.batch = batch;
+    if (branch) userQuery.branch = branch;
+    if (section) userQuery.section = section;
+    if (studentName) {
+      userQuery.name = { $regex: studentName, $options: 'i' };
+    }
+
+    const students = await User.find(userQuery).select('_id name email batch branch section');
+
+    if (students.length === 0) {
+      return res.json([]);
+    }
+
+    const studentIds = students.map(s => s._id);
+
+    const attempts = await TestAttempt.find({
+      studentId: { $in: studentIds },
+      status: 'completed'
+    })
+    .populate({
+      path: 'testId',
+      select: 'testName testType subject totalMarks difficulty companyName'
+    })
+    .populate({
+      path: 'studentId',
+      select: 'name email batch branch section'
+    })
+    .sort({ createdAt: -1 });
+
+    let filteredAttempts = attempts;
+
+    if (testType && testType !== 'all') {
+      filteredAttempts = filteredAttempts.filter(attempt =>
+        attempt.testId && attempt.testId.testType === testType
+      );
+    }
+
+    if (subject && subject !== 'all') {
+      filteredAttempts = filteredAttempts.filter(attempt =>
+        attempt.testId && attempt.testId.subject === subject
+      );
+    }
+
+    const reports = filteredAttempts.map(attempt => ({
+      _id: attempt._id,
+      studentName: attempt.studentId?.name || 'Unknown',
+      studentEmail: attempt.studentId?.email || 'Unknown',
+      batch: attempt.studentId?.batch,
+      branch: attempt.studentId?.branch,
+      section: attempt.studentId?.section,
+      testName: attempt.testId?.testName || 'Unknown Test',
+      testType: attempt.testId?.testType || 'Unknown',
+      subject: attempt.testId?.subject || 'Unknown',
+      companyName: attempt.testId?.companyName,
+      difficulty: attempt.testId?.difficulty,
+      totalMarks: attempt.totalMarks,
+      marksObtained: attempt.marksObtained,
+      percentage: attempt.percentage,
+      correctAnswers: attempt.correctAnswers,
+      incorrectAnswers: attempt.incorrectAnswers,
+      timeSpent: attempt.timeSpent,
+      status: attempt.percentage >= 40 ? 'Pass' : 'Fail',
+      completedAt: attempt.createdAt,
+      startTime: attempt.startTime,
+      endTime: attempt.endTime
+    }));
+
+    res.json(reports);
+  } catch (error) {
+    logger.errorLog(error, { context: 'Get faculty student reports error' });
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Configure multer for image uploads
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files (JPEG, PNG, GIF, WebP) are allowed'), false);
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+// Upload question image
+router.post('/upload-image', auth, authorize('master_admin', 'faculty'), imageUpload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    // Convert image to base64 data URL
+    const base64Image = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype;
+    const imageUrl = `data:${mimeType};base64,${base64Image}`;
+
+    res.json({
+      success: true,
+      imageUrl,
+      message: 'Image uploaded successfully'
+    });
+  } catch (error) {
+    logger.errorLog(error, { context: 'Image upload error' });
+    res.status(500).json({ error: 'Failed to upload image' });
   }
 });
 
 module.exports = router;
-
-// --- Master Admin secure email change flow ---
-// POST /admin/profile/change-email -> sends token to new email
-router.post('/profile/change-email', auth, authorize('master_admin'), [
-  body('newEmail').isEmail().normalizeEmail()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-
-    const { newEmail } = req.body;
-
-    // Check if another user already uses this email
-    const existing = await User.findOne({ email: newEmail });
-    if (existing) return res.status(400).json({ error: 'Email is already in use' });
-
-    const PendingAction = require('../models/PendingAction');
-    const crypto = require('crypto');
-
-    const token = crypto.randomBytes(24).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-
-    await PendingAction.create({
-      type: 'email_change',
-      userId: req.user._id,
-      newEmail,
-      token,
-      expiresAt
-    });
-
-  // Send email with confirmation link (do not log full email here)
-  // Use environment configuration when provided. These values should be set in your
-  // environment (.env) or hosting config. We intentionally read them directly so
-  // that deployment configuration controls the generated links.
-  const FRONTEND_URL = process.env.FRONTEND_URL;
-  const BACKEND_URL = process.env.BACKEND_URL;
-
-  const frontendBase = FRONTEND_URL;
-  const confirmUrl = `${BACKEND_URL}/api/admin/profile/confirm-email-change?token=${token}`;
-
-    // We intentionally avoid logging the full newEmail here to reduce PII in logs.
-    await emailService.sendWithRetry({
-      from: process.env.EMAIL_USER,
-      to: newEmail,
-      subject: 'Confirm your email change',
-      html: `<p>Please confirm your Master Admin email change by clicking <a href="${confirmUrl}">this link</a>. The link expires in 15 minutes.</p>`
-    }).catch(e => console.warn('Email send error for change-email (masked)'));
-
-    res.json({ message: 'Confirmation code sent to new email if it is reachable. Please check inbox.' });
-  } catch (error) {
-    logger.errorLog(error, { context: 'Change email request error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// GET /admin/profile/confirm-email-change?token=... -> confirm and apply
-router.get('/profile/confirm-email-change', async (req, res) => {
-  try {
-    const { token } = req.query;
-    if (!token) return res.status(400).json({ error: 'Missing token' });
-
-    const PendingAction = require('../models/PendingAction');
-    const AuditLog = require('../models/AuditLog');
-
-    const pending = await PendingAction.findOne({ token, type: 'email_change', consumed: false });
-    if (!pending) return res.status(404).json({ error: 'Invalid or expired token' });
-    if (pending.expiresAt < new Date()) return res.status(400).json({ error: 'Token expired' });
-
-    // Re-check that email is not taken
-    const already = await User.findOne({ email: pending.newEmail });
-    if (already) return res.status(400).json({ error: 'Email already in use' });
-
-    const user = await User.findById(pending.userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const oldEmail = user.email;
-    user.email = pending.newEmail;
-    await user.save();
-
-    pending.consumed = true;
-    await pending.save();
-
-    // Mask emails for audit
-    const mask = (e) => {
-      if (!e) return '';
-      const parts = e.split('@');
-      if (parts.length !== 2) return '***';
-      const name = parts[0];
-      const domain = parts[1];
-      return name.length <= 2 ? `${name[0]}***@${domain}` : `${name[0]}***${name.slice(-1)}@${domain}`;
-    };
-
-    await AuditLog.create({
-      userId: user._id,
-      actorId: user._id,
-      action: 'email_change',
-      details: { oldEmail: mask(oldEmail), newEmail: mask(user.email) },
-      ip: req.ip
-    });
-
-    // Success response (do not include emails)
-    res.json({ message: 'Email change confirmed' });
-  } catch (error) {
-    logger.errorLog(error, { context: 'Confirm change email error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
