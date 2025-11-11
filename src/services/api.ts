@@ -66,6 +66,12 @@ class ApiService {
     return this.request<T>(endpoint, { ...options, method: 'GET' });
   }
 
+  // Convenience method to fetch sample questions for a subject
+  async getSampleQuestions(subject: string, count = 5) {
+    const q = `?count=${encodeURIComponent(String(count))}`;
+    return this.get<{ questions: any[] }>(`/tests/sample-questions/${encodeURIComponent(subject)}${q}`);
+  }
+
   async post<T>(endpoint: string, data?: any, options: RequestInit = {}): Promise<T> {
     return this.request<T>(endpoint, {
       ...options,
