@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Users } from 'lucide-react';
 import io from 'socket.io-client';
-import apiService from '../../services/api';
+import apiService, { API_BASE_URL } from '../../services/api';
 
-// Extract the base URL from ApiService's API_BASE_URL
-const API_BASE = new URL((import.meta.env.VITE_API_URL || '').replace('/api', '') || window.location.origin).origin;
+// Use the same API base URL as the Api service. Strip the `/api` suffix for socket base.
+const API_BASE = new URL((API_BASE_URL || '').replace('/api', '') || window.location.origin).origin;
 
+// Pass token in auth so the socket server can validate the connection if required
 const socket = io(API_BASE, {
   path: '/socket.io',
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  auth: {
+    token: typeof window !== 'undefined' ? localStorage.getItem('token') : null
+  }
 });
 
 const ActivitySummary: React.FC = () => {
