@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Code, Plus, Trash2, Search } from 'lucide-react';
 import api from '../../services/api';
 
-interface CodingQuestion {
+export interface CodingQuestion {
   _id?: string;
   id?: string;
   title: string;
