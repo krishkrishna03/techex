@@ -81,6 +81,8 @@ interface Test {
   sections?: any[];
   questions?: any[];
   testType?: string;
+  hasCodingSection?: boolean;
+  codingQuestions?: any[];
 }
 
 interface RecentLogin {
@@ -777,6 +779,40 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
                       </div>
                     </div>
                   ))
+                )}
+                {/* Render coding questions if present */}
+                {previewTest.hasCodingSection && (previewTest as any).codingQuestions && (previewTest as any).codingQuestions.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-lg font-semibold mb-2">Coding Questions</h4>
+                    {(previewTest as any).codingQuestions.map((cq: any, idx: number) => {
+                      const question = cq.questionId || cq;
+                      return (
+                        <div key={idx} className="border rounded-lg p-4 mb-3">
+                          <h5 className="font-semibold">{idx + 1}. {question.title || question.name || 'Untitled'}</h5>
+                          {question.description && <p className="text-sm text-gray-700 mt-2">{question.description}</p>}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                            {question.sample_input !== undefined && (
+                              <div>
+                                <p className="text-xs text-gray-500">Sample Input</p>
+                                <pre className="bg-gray-100 p-2 rounded text-sm overflow-x-auto">{question.sample_input}</pre>
+                              </div>
+                            )}
+                            {question.sample_output !== undefined && (
+                              <div>
+                                <p className="text-xs text-gray-500">Sample Output</p>
+                                <pre className="bg-gray-100 p-2 rounded text-sm overflow-x-auto">{question.sample_output}</pre>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-3 text-xs text-gray-600">
+                            {question.supported_languages && <span className="px-2 py-1 bg-gray-50 border rounded">Languages: {(question.supported_languages || []).join(', ')}</span>}
+                            {cq.points !== undefined && <span className="px-2 py-1 bg-gray-50 border rounded">Points: {cq.points}</span>}
+                            {cq.timeLimit !== undefined && <span className="px-2 py-1 bg-gray-50 border rounded">Time Limit: {cq.timeLimit}s</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
