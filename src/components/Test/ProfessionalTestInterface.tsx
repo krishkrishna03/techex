@@ -1,3 +1,21 @@
+/**
+ * ProfessionalTestInterface Component
+ * 
+ * Handles multi-session test rendering with sequential MCQ → Coding flow:
+ * 
+ * Flow for tests with both MCQ and Coding sections:
+ * 1. MCQ section displays in fullscreen with question palette
+ * 2. Student answers questions and clicks "Submit"
+ * 3. MCQ answers are submitted, mcqCompleted state is set to true
+ * 4. Coding section automatically takes full screen (MCQ UI hidden)
+ * 5. First coding question is pre-selected for student
+ * 6. Student solves coding problems in fullscreen
+ * 7. Final submission exits fullscreen and completes test
+ * 
+ * For tests with only MCQ or only Coding, behavior remains unchanged.
+ * The mcqCompleted state ensures sequential display of sections.
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock, CheckCircle, AlertTriangle, Bookmark,
@@ -79,6 +97,9 @@ const ProfessionalTestInterface: React.FC<ProfessionalTestInterfaceProps> = ({
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [showQuestionPalette, setShowQuestionPalette] = useState(true);
   const [selectedCodingQuestionId, setSelectedCodingQuestionId] = useState<string | null>(null);
+  // mcqCompleted: When true, MCQ section hides and coding section takes full screen
+  // This enables sequential flow: MCQ → [Submit] → Coding (fullscreen)
+  const [mcqCompleted, setMcqCompleted] = useState(false);
   const codingInterfaceRef = useRef<HTMLDivElement | null>(null);
   const [tabSwitches, setTabSwitches] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -316,7 +337,6 @@ const ProfessionalTestInterface: React.FC<ProfessionalTestInterfaceProps> = ({
 
   const handleSubmit = async (isAutoSubmit = false) => {
     if (submitting) return;
-
     const counts = getCounts();
 
     if (!isAutoSubmit && (counts.notAnswered > 0 || counts.notVisited > 0)) {
@@ -341,11 +361,32 @@ const ProfessionalTestInterface: React.FC<ProfessionalTestInterfaceProps> = ({
 
       const timeSpent = Math.floor((Date.now() - startTime.getTime()) / 1000 / 60);
 
+      // If the test includes a coding section, submit MCQ answers first then transition
+      // to the coding interface (full-screen). Do NOT exit fullscreen yet.
+      if (test.hasCodingSection && test.codingQuestions && test.codingQuestions.length > 0) {
+        await onSubmit(submissionAnswers, timeSpent, tabSwitches);
+
+        // Mark MCQ part completed and open coding UI in full screen
+        setMcqCompleted(true);
+        setShowQuestionPalette(false);
+        const firstCoding = test.codingQuestions[0];
+        const firstId = firstCoding && (firstCoding._id || firstCoding.questionId || firstCoding.id);
+        if (firstId) setSelectedCodingQuestionId(firstId);
+
+        // keep submitting false so student can continue with coding
+        setSubmitting(false);
+        return;
+      }
+
+      // No coding section: exit fullscreen and finalize submission
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
 
       await onSubmit(submissionAnswers, timeSpent, tabSwitches);
+      setSubmitting(false);
+      // close the interface after final submit
+      onExit();
     } catch (error) {
       console.error('Submit error:', error);
       alert('Failed to submit test. Please try again.');
@@ -539,7 +580,11 @@ const ProfessionalTestInterface: React.FC<ProfessionalTestInterfaceProps> = ({
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* MCQ Section */}
+        {/* 
+          MCQ Section: Hidden when mcqCompleted is true
+          Sequential flow: MCQ displayed first, after submission coding takes full screen
+        */}
+        {!mcqCompleted && (
         <div className={`${!hasMCQ ? 'hidden' : 'flex-1'} overflow-y-auto p-6`}>
           <div className="max-w-4xl mx-auto">
               <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
@@ -654,6 +699,7 @@ const ProfessionalTestInterface: React.FC<ProfessionalTestInterfaceProps> = ({
             )}
           </div>
         </div>
+        )}
 
         {hasMCQ && showQuestionPalette && (
           <div className="w-80 bg-white border-l shadow-lg overflow-y-auto">
@@ -751,9 +797,13 @@ const ProfessionalTestInterface: React.FC<ProfessionalTestInterfaceProps> = ({
           </button>
         )}
 
-        {/* Coding section: show list of coding questions and embedded coding UI */}
+        {/* 
+          Coding Section: Takes full width when mcqCompleted is true
+          Sequential flow: When MCQs submitted, this section expands to full screen
+          Width is responsive: full (flex-1) when MCQ done, or 75% when MCQ is active
+        */}
         {test.hasCodingSection && test.codingQuestions && test.codingQuestions.length > 0 && (
-          <div className={`${hasMCQ ? 'w-[75%]' : 'flex-1'} bg-white border-l flex flex-col h-full`}>
+          <div className={`${mcqCompleted || !hasMCQ ? 'flex-1' : 'w-[75%]'} bg-white ${mcqCompleted || !hasMCQ ? '' : 'border-l'} flex flex-col h-full`}>
             <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Code className="w-5 h-5 text-gray-600" />
