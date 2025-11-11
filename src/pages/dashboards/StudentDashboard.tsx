@@ -62,12 +62,8 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [assignedTests, setAssignedTests] = useState<AssignedTest[]>([]);
   const [activeTestType, setActiveTestType] = useState('Assessment');
-  const [activeSubject, setActiveSubject] = useState('all');
-  const [testCounts, setTestCounts] = useState<any>(null);
   const [activeTest, setActiveTest] = useState<any>(null);
   const [testStartTime, setTestStartTime] = useState<Date | null>(null);
-  const [showResults, setShowResults] = useState(false);
-  const [testResults, setTestResults] = useState<any>(null);
   const [showInstantResults, setShowInstantResults] = useState(false);
   const [instantResults, setInstantResults] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -111,15 +107,15 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
       const storedTestType = sessionStorage.getItem('selectedTestType');
       if (storedTestType && storedTestType !== activeTestType) {
         setActiveTestType(storedTestType);
-        loadAssignedTests(storedTestType, activeSubject);
+        loadAssignedTests(storedTestType);
         sessionStorage.removeItem('selectedTestType');
       } else {
-        loadAssignedTests(activeTestType, activeSubject);
+        loadAssignedTests(activeTestType);
       }
     } else if (activeTab === 'performance') {
       loadPerformanceData();
     }
-  }, [activeTab, activeTestType, activeSubject, activeTest, testStartTime]);
+  }, [activeTab, activeTestType, activeTest, testStartTime]);
 
   // Listen for test type changes from sidebar
   useEffect(() => {
@@ -159,12 +155,11 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
     }
   };
 
-  const loadAssignedTests = async (testType?: string, subject?: string) => {
+  const loadAssignedTests = async (testType?: string) => {
     try {
       setLoading(true);
       const data = await apiService.getStudentAssignedTests(
-        testType === 'all' ? undefined : testType,
-        subject === 'all' ? undefined : subject
+        testType === 'all' ? undefined : testType
       ) as AssignedTest[];
       setAssignedTests(data);
 
@@ -198,8 +193,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
         ).length;
       });
 
-      setTestCounts(counts);
-      // dropdownCounts state removed because it was never read
+      // Test counts object created but not stored (was never used in UI)
     } catch (err: any) {
       setError(err instanceof Error ? err.message : 'Failed to load assigned tests');
     } finally {
@@ -266,10 +260,8 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
         setInstantResults(response);
         setShowInstantResults(true);
       } else {
-        // Show regular results for Assessment/Assignment tests
-        const results = await apiService.getTestResults(activeTest._id);
-        setTestResults(results);
-        setShowResults(true);
+        // For Assessment/Assignment tests, just reload the tests
+        // The results will be shown through the DetailedTestReportModal when user clicks View Results
       }
 
       // Reload assigned tests
