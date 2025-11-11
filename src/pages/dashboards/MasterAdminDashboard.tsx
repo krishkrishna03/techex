@@ -736,24 +736,56 @@ const MasterAdminDashboard: React.FC<MasterAdminDashboardProps> = ({ activeTab, 
                     <p className="font-semibold">{previewTest.totalMarks}</p>
                   </div>
                 </div>
+                {/* Section summary for sectioned tests */}
+                {previewTest.hasSections && Array.isArray((previewTest as any).sections) && (previewTest as any).sections.length > 0 && (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                    <p className="text-sm font-semibold text-blue-900 mb-2">📋 Test Structure: {(previewTest as any).sections.length} Section{(previewTest as any).sections.length !== 1 ? 's' : ''}</p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {(previewTest as any).sections.map((section: any, idx: number) => (
+                        <div key={idx} className="text-xs text-blue-800 bg-white p-2 rounded border border-blue-100">
+                          <span className="font-semibold">{idx + 1}. {section.sectionName}</span>
+                          <span className="text-blue-600 ml-2">• {section.numberOfQuestions || section.questions?.length || 0} Q</span>
+                          {section.sectionDuration && <span className="text-blue-600 ml-2">• {section.sectionDuration} min</span>}
+                          {section.marksPerQuestion && <span className="text-blue-600 ml-2">• {section.marksPerQuestion} marks/Q</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="max-h-96 overflow-y-auto space-y-4">
                 {/* If test has sections, render each section with its questions */}
                 {previewTest.hasSections && Array.isArray((previewTest as any).sections) ? (
                   (previewTest as any).sections.map((section: any, sIdx: number) => (
-                    <div key={sIdx} className="space-y-2">
-                      <div className="px-3 py-2 bg-gray-100 rounded text-sm font-semibold">Section: {section.sectionName} — Questions: {section.questions?.length || 0}</div>
+                    <div key={sIdx} className="space-y-2 border-l-4 border-blue-500 pl-4">
+                      <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-4 py-3 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-bold text-blue-900">Section {sIdx + 1}: {section.sectionName}</h4>
+                            <p className="text-xs text-blue-700 mt-1">
+                              {section.numberOfQuestions || section.questions?.length || 0} Questions
+                              {section.sectionDuration && ` • ${section.sectionDuration} min`}
+                              {section.marksPerQuestion && ` • ${section.marksPerQuestion} marks per question`}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="inline-block bg-blue-200 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold">
+                              {section.numberOfQuestions || section.questions?.length || 0} Q
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                       {(section.questions || []).map((q: any, index: number) => (
-                        <div key={index} className="border rounded-lg p-4">
-                          <h4 className="font-medium mb-2">{index + 1}. {q.questionText}</h4>
+                        <div key={index} className="border rounded-lg p-4 ml-2 bg-white hover:shadow-md transition-shadow">
+                          <h5 className="font-medium mb-2 text-gray-900">{index + 1}. {q.questionText}</h5>
                           <div className="grid grid-cols-2 gap-2">
                             {Object.entries(q.options || {}).map(([key, value]: [string, any]) => (
                               <div
                                 key={key}
-                                className={`p-2 rounded ${key === q.correctAnswer ? 'bg-green-100 border border-green-300' : 'bg-gray-50'}`}
+                                className={`p-2 rounded text-sm ${key === q.correctAnswer ? 'bg-green-100 border border-green-300 font-medium' : 'bg-gray-50 border border-gray-200'}`}
                               >
-                                <span className="font-medium">{key})</span> {value}
-                                {key === q.correctAnswer && <span className="ml-2 text-green-600 text-xs">✓ Correct</span>}
+                                <span className="font-semibold">{key})</span> {value}
+                                {key === q.correctAnswer && <span className="ml-2 text-green-600 text-xs">✓</span>}
                               </div>
                             ))}
                           </div>
