@@ -597,9 +597,15 @@ router.post('/profile/change-email', auth, authorize('master_admin'), [
       expiresAt
     });
 
-    // Send email with confirmation link (do not log full email here)
-    const frontendBase = process.env.FRONTEND_URL || `${process.env.BACKEND_URL || 'http://localhost:3000'}`;
-    const confirmUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/admin/profile/confirm-email-change?token=${token}`;
+  // Send email with confirmation link (do not log full email here)
+  // Use environment configuration when provided. These values should be set in your
+  // environment (.env) or hosting config. We intentionally read them directly so
+  // that deployment configuration controls the generated links.
+  const FRONTEND_URL = process.env.FRONTEND_URL;
+  const BACKEND_URL = process.env.BACKEND_URL;
+
+  const frontendBase = FRONTEND_URL;
+  const confirmUrl = `${BACKEND_URL}/api/admin/profile/confirm-email-change?token=${token}`;
 
     // We intentionally avoid logging the full newEmail here to reduce PII in logs.
     await emailService.sendWithRetry({
