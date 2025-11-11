@@ -164,7 +164,7 @@ const Sidebar: React.FC<SidebarProps> = ({ userRole, activeTab, onTabChange, col
       id: 'reports',
       label: 'Reports',
       icon: <BarChart3 size={20} />,
-      roles: ['college_admin', 'student'],
+      roles: ['college_admin'],
     },
     {
       id: 'assigned-tests',
