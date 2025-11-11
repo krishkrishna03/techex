@@ -23,7 +23,8 @@ router.get('/tests/assigned', auth, authorize('faculty'), async (req, res) => {
       .populate('testId')
       .sort({ createdAt: -1 });
 
-    let filteredAssignments = assignments.filter(a => a.testId);
+    // Filter to only include active tests
+    let filteredAssignments = assignments.filter(a => a.testId && a.testId.isActive === true);
 
     if (testType && testType !== 'all') {
       filteredAssignments = filteredAssignments.filter(
@@ -66,8 +67,10 @@ router.get('/tests/assigned', auth, authorize('faculty'), async (req, res) => {
           assignedDate: assignment.createdAt,
           totalStudents,
           completed,
+          completed_count: completed,
           avgScore: avgScore.toFixed(1),
-          status: assignment.status
+          status: assignment.status,
+          attemptCount: completed
         };
       })
     );
