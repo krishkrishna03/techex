@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Plus, Upload, Eye, Trash2, FileText, Clock, Calendar, Hash, XCircle, CreditCard as Edit2, CreditCard, Code } from 'lucide-react';
+import { Plus, Upload, Eye, Trash2, FileText, Clock, Calendar, Hash, XCircle, Edit2, Code } from 'lucide-react';
 import LoadingSpinner from '../UI/LoadingSpinner';
-import CodingSectionConfig from './CodingSectionConfig';
+import CodingSectionConfig, { type CodingQuestion } from './CodingSectionConfig';
 import apiService from '../../services/api';
 
 interface Question {
@@ -23,14 +23,7 @@ interface Question {
   marks: number;
 }
 
-interface CodingQuestion {
-  id: string;
-  title: string;
-  difficulty: string;
-  tags: string[];
-  points?: number;
-  timeLimit?: number;
-}
+// Remove this interface and import CodingQuestion from CodingSectionConfig instead
 
 interface TestFormData {
   testName: string;
@@ -102,7 +95,7 @@ const TestForm: React.FC<TestFormProps> = ({ onSubmit, loading, initialData }) =
   const [errors, setErrors] = useState<any>({});
   const [editingQuestionIndex, setEditingQuestionIndex] = useState<number | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-  const [showCodingConfig, setShowCodingConfig] = useState(false);
+  // showCodingConfig was unused and removed to fix unused variable TypeScript warnings
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const subjects = ['Verbal', 'Reasoning', 'Technical', 'Arithmetic', 'Communication'];
@@ -231,11 +224,7 @@ const TestForm: React.FC<TestFormProps> = ({ onSubmit, loading, initialData }) =
     try {
       const payload = {
         ...formData,
-        codingQuestions: formData.hasCodingSection ? formData.codingQuestions?.map(q => ({
-          questionId: q.id,
-          points: q.points || 100,
-          timeLimit: q.timeLimit || 3600
-        })) : []
+        codingQuestions: formData.hasCodingSection ? formData.codingQuestions : []
       };
       await onSubmit(payload);
       // Reset form
@@ -357,49 +346,33 @@ const TestForm: React.FC<TestFormProps> = ({ onSubmit, loading, initialData }) =
     formDataUpload.append('pdf', file);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${apiUrl}/tests/extract-pdf`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-          // Don't set Content-Type - let browser set it with boundary for FormData
-        },
-        body: formDataUpload
-      });
+      // Use centralized API service to extract questions from the uploaded PDF
+      const data = await apiService.extractQuestionsFromFile(file);
 
-      const data = await response.json();
-
-      if (response.ok) {
-        if (!data || !data.questions || !Array.isArray(data.questions)) {
-          throw new Error('Invalid response from server');
-        }
-
-        if (data.questions.length === 0) {
-          alert('No questions found in PDF. Please check the file format.');
-          return;
-        }
-
-        const extractedQuestions = data.questions.map((q: any) => ({
-          ...q,
-          marks: formData.marksPerQuestion
-        }));
-
-        setFormData(prev => ({
-          ...prev,
-          questions: [...prev.questions, ...extractedQuestions].slice(0, formData.numberOfQuestions)
-        }));
-
-        const questionsList = extractedQuestions.map((q: any, idx: number) =>
-          `Q${idx + 1}: ${q.questionText.substring(0, 50)}...`
-        ).join('\n');
-
-        alert(`Successfully extracted ${data.questions.length} questions from PDF:\n\n${questionsList.substring(0, 500)}${questionsList.length > 500 ? '\n...(and more)' : ''}\n\nScroll down to review all questions before submitting.`);
-      } else {
-        console.error('PDF extraction error:', data);
-        const errorMessage = data.error || 'Failed to extract questions from PDF';
-        alert(`${errorMessage}\n\nTips for better PDF extraction:\n• Ensure questions are numbered (1., 2., etc.)\n• Options should be labeled A), B), C), D)\n• Include clear answer indicators (Answer: A, Correct: B, etc.)\n• Use clear formatting with line breaks between questions`);
+      if (!data || !data.questions || !Array.isArray(data.questions)) {
+        throw new Error('Invalid response from server');
       }
+
+      if (data.questions.length === 0) {
+        alert('No questions found in PDF. Please check the file format.');
+        return;
+      }
+
+      const extractedQuestions = data.questions.map((q: any) => ({
+        ...q,
+        marks: formData.marksPerQuestion
+      }));
+
+      setFormData(prev => ({
+        ...prev,
+        questions: [...prev.questions, ...extractedQuestions].slice(0, formData.numberOfQuestions)
+      }));
+
+      const questionsList = extractedQuestions.map((q: any, idx: number) =>
+        `Q${idx + 1}: ${q.questionText.substring(0, 50)}...`
+      ).join('\n');
+
+      alert(`Successfully extracted ${data.questions.length} questions from PDF:\n\n${questionsList.substring(0, 500)}${questionsList.length > 500 ? '\n...(and more)' : ''}\n\nScroll down to review all questions before submitting.`);
     } catch (error) {
       console.error('PDF upload error:', error);
       alert('Error uploading PDF. Please check your connection and try again.\n\nIf the problem persists, try using the "Add Sample" or "Add Manual" options instead.');
@@ -461,25 +434,12 @@ const TestForm: React.FC<TestFormProps> = ({ onSubmit, loading, initialData }) =
 
   const generateSampleQuestions = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-      const response = await fetch(`${apiUrl}/tests/sample-questions/${formData.subject}?count=${Math.min(5, formData.numberOfQuestions - formData.questions.length)}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      const count = Math.min(5, formData.numberOfQuestions - formData.questions.length);
+      const data = await apiService.getSampleQuestions(formData.subject, count);
 
-      const data = await response.json();
-      
-      if (response.ok) {
-        const sampleQuestions = data.questions.map((q: any) => ({
-          ...q,
-          marks: formData.marksPerQuestion
-        }));
-        
-        setFormData(prev => ({
-          ...prev,
-          questions: [...prev.questions, ...sampleQuestions]
-        }));
+      if (data && Array.isArray(data.questions)) {
+        const sampleQuestions = data.questions.map((q: any) => ({ ...q, marks: formData.marksPerQuestion }));
+        setFormData(prev => ({ ...prev, questions: [...prev.questions, ...sampleQuestions] }));
       }
     } catch (error) {
       console.error('Error generating sample questions:', error);
@@ -1223,7 +1183,7 @@ const TestForm: React.FC<TestFormProps> = ({ onSubmit, loading, initialData }) =
                     className="p-1 text-blue-600 hover:bg-blue-50 rounded"
                     title="Edit Question"
                   >
-                    <CreditCard as Edit2 size={16} />
+                    <Edit2 size={16} />
                   </button>
                   <button
                     type="button"
