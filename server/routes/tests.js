@@ -449,8 +449,37 @@ router.get('/', auth, authorize('master_admin'), async (req, res) => {
       .populate('codingQuestions.questionId')
       .sort({ createdAt: -1 });
 
-    res.json(tests);
+    // Get attempt counts for all tests
+    const attemptCounts = await TestAttempt.aggregate([
+      {
+        $match: {
+          isActive: true
+        }
+      },
+      {
+        $group: {
+          _id: '$testId',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Create a map of testId -> attemptCount
+    const attemptCountMap = new Map();
+    attemptCounts.forEach(ac => {
+      attemptCountMap.set(ac._id.toString(), ac.count);
+    });
+
+    // Add attemptCount to each test
+    const testsWithAttempts = tests.map(test => {
+      const testObj = test.toObject();
+      testObj.attemptCount = attemptCountMap.get(test._id.toString()) || 0;
+      return testObj;
+    });
+
+    res.json(testsWithAttempts);
   } catch (error) {
+    logger.errorLog(error, { context: 'Get tests error' });
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -561,7 +590,7 @@ router.get('/college/all-tests', auth, authorize('college_admin', 'faculty'), as
   try {
     const { testType, subject } = req.query;
 
-    let query = {};
+    let query = { isActive: true };
     if (testType && testType !== 'all') {
       query.testType = testType;
     }
@@ -569,28 +598,34 @@ router.get('/college/all-tests', auth, authorize('college_admin', 'faculty'), as
       query.subject = subject;
     }
 
+    // Get only active tests
     const allTests = await Test.find(query).sort({ createdAt: -1 });
+    const activeTestIds = new Set(allTests.map(t => t._id.toString()));
 
+    // Get assignments - but filter to only include tests that still exist
     const assignments = await TestAssignment.find({
       collegeId: req.user.collegeId,
       assignedTo: 'college',
-      isActive: true
+      isActive: true,
+      testId: { $in: Array.from(activeTestIds) }  // Only get assignments for active tests
     }).select('testId status assignedAt assignedBy').populate('assignedBy', 'name email');
 
-    // Get student assignments
+    // Get student assignments - but filter to only include tests that still exist
     const studentAssignments = await TestAssignment.find({
       collegeId: req.user.collegeId,
       assignedTo: 'students',
-      isActive: true
+      isActive: true,
+      testId: { $in: Array.from(activeTestIds) }  // Only get assignments for active tests
     }).select('testId studentFilters');
 
-    // Get attempt counts
+    // Get attempt counts - only for active tests
     const TestAttempt = require('../models/TestAttempt');
     const attemptCounts = await TestAttempt.aggregate([
       {
         $match: {
           collegeId: req.user.collegeId,
-          isActive: true
+          isActive: true,
+          testId: { $in: Array.from(activeTestIds) }  // Only count attempts for active tests
         }
       },
       {
@@ -693,13 +728,13 @@ router.get('/college/assigned', auth, authorize('college_admin', 'faculty'), asy
       .populate('testId')
       .populate('assignedBy', 'name email')
       .sort({ createdAt: -1 }),
-      Test.find({}, '_id') // Get just test IDs for validation
+      Test.find({ isActive: true }, '_id') // Only get active tests for validation
     ]);
 
     // Create a Set of valid test IDs
     const validTestIds = new Set(tests.map(t => t._id.toString()));
 
-    // Filter out assignments where testId is null or test no longer exists
+    // Filter out assignments where testId is null or test no longer exists or is inactive
     let filteredAssignments = assignments.filter(assignment => 
       assignment.testId && validTestIds.has(assignment.testId._id.toString())
     );
@@ -863,13 +898,13 @@ router.get('/student/assigned', auth, authorize('student'), async (req, res) => 
         }
       })
       .sort({ createdAt: -1 }),
-      Test.find({}, '_id') // Get just test IDs for validation
+      Test.find({ isActive: true }, '_id') // Only get active tests for validation
     ]);
 
     // Create a Set of valid test IDs
     const validTestIds = new Set(tests.map(t => t._id.toString()));
 
-    // Filter out assignments where testId is null or test no longer exists
+    // Filter out assignments where testId is null, test no longer exists, or test is inactive
     const validAssignments = assignments.filter(assignment => 
       assignment.testId && validTestIds.has(assignment.testId._id.toString())
     );
@@ -1324,13 +1359,18 @@ router.delete('/:id', auth, authorize('master_admin'), async (req, res) => {
   try {
     const testId = req.params.id;
     
-    // Delete all related assignments first
-    await TestAssignment.deleteMany({ testId });
+    // Soft delete the test by marking isActive as false
+    const test = await Test.findByIdAndUpdate(
+      testId,
+      { isActive: false },
+      { new: true }
+    );
     
-    // Delete all related attempts
-    await TestAttempt.deleteMany({ testId });
-
-    // Delete test attempts data used for reports
+    if (!test) {
+      return res.status(404).json({ error: 'Test not found' });
+    }
+    
+    // Soft delete all related assignments and attempts
     await Promise.all([
       TestAssignment.updateMany(
         { testId },
@@ -1341,12 +1381,6 @@ router.delete('/:id', auth, authorize('master_admin'), async (req, res) => {
         { $set: { isActive: false } }
       )
     ]);
-
-    // Finally delete the test
-    const test = await Test.findByIdAndDelete(testId);
-    if (!test) {
-      return res.status(404).json({ error: 'Test not found' });
-    }
 
     res.json({ message: 'Test deleted successfully' });
 
