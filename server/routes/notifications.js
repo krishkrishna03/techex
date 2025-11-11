@@ -506,6 +506,17 @@ router.get('/analytics/report', skipAuthForTests ? (req, res, next) => next() : 
         .populate('recipientId', 'name email role')
         .select('recipientId readAt');
 
+        // Some recipient records may refer to users that were deleted; filter those out
+        const seenBy = seenByUsers
+          .filter(s => s.recipientId)
+          .map(s => ({
+            userId: s.recipientId._id,
+            userName: s.recipientId.name,
+            userEmail: s.recipientId.email,
+            userRole: s.recipientId.role,
+            seenAt: s.readAt
+          }));
+
         return {
           id: notification._id,
           title: notification.title,
@@ -521,13 +532,7 @@ router.get('/analytics/report', skipAuthForTests ? (req, res, next) => next() : 
           seenPercentage: stats.totalRecipients > 0
             ? Math.round((stats.seenCount / stats.totalRecipients) * 100)
             : 0,
-          seenBy: seenByUsers.map(s => ({
-            userId: s.recipientId._id,
-            userName: s.recipientId.name,
-            userEmail: s.recipientId.email,
-            userRole: s.recipientId.role,
-            seenAt: s.readAt
-          }))
+          seenBy
         };
       })
     );
