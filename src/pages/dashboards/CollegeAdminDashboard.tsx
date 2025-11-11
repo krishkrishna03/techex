@@ -477,9 +477,6 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
                     Branches
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Attempts
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -538,12 +535,6 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
                         {test.testBranches ? test.testBranches.join(', ') : 'Not assigned'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="text-xs">
-                        <span className="font-medium">{test.attemptCount || 0}</span>
-                        <span className="text-gray-500"> / {test.assignedStudentCount || 0}</span>
-                      </div>
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
 
                       <div className="flex gap-2">
@@ -597,7 +588,7 @@ const CollegeAdminDashboard: React.FC<CollegeAdminDashboardProps> = ({ activeTab
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
+                    <td colSpan={5} className="px-6 py-12 text-center">
                       <FileText className="mx-auto h-12 w-12 text-gray-300 mb-4" />
                       <h3 className="text-lg font-medium text-gray-900 mb-2">No tests found</h3>
                       <p className="text-gray-600">Tests created by Master Admin will appear here</p>
