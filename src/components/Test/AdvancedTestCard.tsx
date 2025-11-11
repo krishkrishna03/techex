@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import {Activity , Clock, Calendar, FileText, Users, Eye, Send, CreditCard as Edit2, Trash2, BarChart3, Award, TrendingUp, Target, CheckCircle, AlertCircle, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import {Activity , Clock, Calendar, FileText, Users, Eye, Send, CreditCard as Edit2, Trash2, BarChart3, Award, TrendingUp, Target, CheckCircle, ChevronDown, ChevronUp, Info } from 'lucide-react';
 
 interface Test {
   _id: string;
@@ -18,6 +18,9 @@ interface Test {
   assignmentCount?: number;
   completionRate?: number;
   averageScore?: number;
+  attemptCount?: number;
+  hasSections?: boolean;
+  sections?: any[];
 }
 
 interface AdvancedTestCardProps {
@@ -117,6 +120,29 @@ const AdvancedTestCard: React.FC<AdvancedTestCardProps> = ({
   const status = getStatus();
   const StatusIcon = status.icon;
 
+  // Compute display values: if test has sections, aggregate from sections
+  const computeTotalQuestions = () => {
+    if ((test as any).hasSections && Array.isArray((test as any).sections) && (test as any).sections.length > 0) {
+      return (test as any).sections.reduce((acc: number, s: any) => acc + (s.numberOfQuestions || (s.questions ? s.questions.length : 0)), 0);
+    }
+    return typeof test.numberOfQuestions === 'number' ? test.numberOfQuestions : 0;
+  };
+
+  const computeTotalDuration = () => {
+    if ((test as any).hasSections && Array.isArray((test as any).sections) && (test as any).sections.length > 0) {
+      // prefer explicit sectionDuration, fall back to estimated per-section split if missing
+      const durations = (test as any).sections.map((s: any) => Number(s.sectionDuration) || 0);
+      const total = durations.reduce((a: number, b: number) => a + b, 0);
+      if (total > 0) return total;
+      // fallback: if no sectionDuration provided, but top-level duration exists, use it
+      return typeof test.duration === 'number' ? test.duration : 0;
+    }
+    return typeof test.duration === 'number' ? test.duration : 0;
+  };
+
+  const displayNumberOfQuestions = computeTotalQuestions();
+  const displayDuration = computeTotalDuration();
+
   if (variant === 'compact') {
     return (
       <div className={`bg-white rounded-xl shadow-lg border-2 ${getSubjectAccent(test.subject)} hover:shadow-2xl transition-all duration-300 overflow-hidden`}>
@@ -143,7 +169,7 @@ const AdvancedTestCard: React.FC<AdvancedTestCardProps> = ({
           <div className="grid grid-cols-3 gap-2">
             <div className="text-center p-2 bg-gray-50 rounded-lg border border-gray-200">
               <FileText className="w-4 h-4 mx-auto mb-1 text-gray-600" />
-              <p className="text-xs font-bold text-gray-900">{test.numberOfQuestions}</p>
+              <p className="text-xs font-bold text-gray-900">{displayNumberOfQuestions}</p>
             </div>
             <div className="text-center p-2 bg-gray-50 rounded-lg border border-gray-200">
               <Award className="w-4 h-4 mx-auto mb-1 text-gray-600" />
@@ -151,7 +177,7 @@ const AdvancedTestCard: React.FC<AdvancedTestCardProps> = ({
             </div>
             <div className="text-center p-2 bg-gray-50 rounded-lg border border-gray-200">
               <Clock className="w-4 h-4 mx-auto mb-1 text-gray-600" />
-              <p className="text-xs font-bold text-gray-900">{test.duration}m</p>
+              <p className="text-xs font-bold text-gray-900">{displayDuration}m</p>
             </div>
           </div>
 
@@ -239,7 +265,7 @@ const AdvancedTestCard: React.FC<AdvancedTestCardProps> = ({
           <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
             <FileText className="w-6 h-6 mx-auto mb-2 text-blue-600" />
             <p className="text-xs text-blue-600 font-medium mb-1">Questions</p>
-            <p className="text-xl font-bold text-blue-900">{test.numberOfQuestions}</p>
+              <p className="text-xl font-bold text-blue-900">{displayNumberOfQuestions}</p>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border border-green-200 shadow-sm hover:shadow-md transition-shadow">
             <Award className="w-6 h-6 mx-auto mb-2 text-green-600" />
@@ -249,7 +275,7 @@ const AdvancedTestCard: React.FC<AdvancedTestCardProps> = ({
           <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border border-orange-200 shadow-sm hover:shadow-md transition-shadow">
             <Clock className="w-6 h-6 mx-auto mb-2 text-orange-600" />
             <p className="text-xs text-orange-600 font-medium mb-1">Duration</p>
-            <p className="text-xl font-bold text-orange-900">{test.duration} min</p>
+              <p className="text-xl font-bold text-orange-900">{displayDuration} min</p>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
             <Calendar className="w-6 h-6 mx-auto mb-2 text-gray-600" />
@@ -258,13 +284,20 @@ const AdvancedTestCard: React.FC<AdvancedTestCardProps> = ({
           </div>
         </div>
 
-        {(test.assignmentCount !== undefined || test.completionRate !== undefined || test.averageScore !== undefined) && (
+        {(test.attemptCount !== undefined || test.assignmentCount !== undefined || test.completionRate !== undefined || test.averageScore !== undefined) && (
           <div className="bg-gradient-to-r from-teal-50 to-cyan-50 rounded-lg p-4 border border-teal-200">
             <h4 className="text-xs font-semibold text-teal-800 mb-3 flex items-center gap-1">
               <TrendingUp size={14} />
               Performance Metrics
             </h4>
-            <div className="grid grid-cols-3 gap-3">
+            <div className={`grid gap-3 ${test.attemptCount !== undefined ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {test.attemptCount !== undefined && (
+                <div className="text-center">
+                  <Activity className="w-5 h-5 mx-auto mb-1 text-blue-600" />
+                  <p className="text-lg font-bold text-blue-900">{test.attemptCount}</p>
+                  <p className="text-xs text-blue-600">Attempts</p>
+                </div>
+              )}
               {test.assignmentCount !== undefined && (
                 <div className="text-center">
                   <Users className="w-5 h-5 mx-auto mb-1 text-teal-600" />
