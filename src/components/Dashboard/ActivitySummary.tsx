@@ -6,15 +6,6 @@ import apiService, { API_BASE_URL } from '../../services/api';
 // Use the same API base URL as the Api service. Strip the `/api` suffix for socket base.
 const API_BASE = new URL((API_BASE_URL || '').replace('/api', '') || window.location.origin).origin;
 
-// Pass token in auth so the socket server can validate the connection if required
-const socket = io(API_BASE, {
-  path: '/socket.io',
-  transports: ['websocket', 'polling'],
-  auth: {
-    token: typeof window !== 'undefined' ? localStorage.getItem('token') : null
-  }
-});
-
 const ActivitySummary: React.FC = () => {
   const [activeStudents, setActiveStudents] = useState<number>(0);
   const [adminLoginSummary, setAdminLoginSummary] = useState<{ lastLogin: string | null; totalLogins: number }>({ lastLogin: null, totalLogins: 0 });
@@ -29,15 +20,55 @@ const ActivitySummary: React.FC = () => {
       setAdminLoginSummary(res.adminLoginSummary || { lastLogin: null, totalLogins: 0 });
     }).catch(() => {});
 
-    // Subscribe to socket updates
-    socket.on('activity:update', (payload: any) => {
-      if (!mounted) return;
-      setActiveStudents(payload.activeStudents || 0);
-    });
+    // Initialize socket connection at runtime with guards to avoid connecting to
+    // third-party hosts during local development. This prevents repeated failed
+    // wss attempts when VITE_API_URL is pointed to an external domain.
+    let mountedSocket: any = null;
+
+    const shouldConnectSocket = (() => {
+      try {
+        const apiUrl = new URL(API_BASE);
+        const apiHost = apiUrl.hostname;
+
+        // Allow socket when API host is localhost or matches the current origin.
+        if (apiHost.includes('localhost') || apiHost === window.location.hostname) return true;
+
+        // In production we may want sockets to connect to remote hosts; allow when NODE_ENV=production
+        if (import.meta.env && import.meta.env.MODE === 'production') return true;
+
+        // Otherwise, don't connect (likely points to external dev tooling / vercel hosts)
+        return false;
+      } catch (err) {
+        return false;
+      }
+    })();
+
+    if (shouldConnectSocket) {
+      try {
+        mountedSocket = io(API_BASE, {
+          path: '/socket.io',
+          transports: ['websocket', 'polling'],
+          auth: {
+            token: typeof window !== 'undefined' ? localStorage.getItem('token') : null
+          }
+        });
+
+        mountedSocket.on('activity:update', (payload: any) => {
+          if (!mounted) return;
+          setActiveStudents(payload.activeStudents || 0);
+        });
+      } catch (err) {
+        // Swallow socket init errors in development to avoid noisy console logs
+        console.warn('Socket initialization skipped or failed:', err);
+      }
+    }
 
     return () => {
       mounted = false;
-      socket.off('activity:update');
+      if (mountedSocket) {
+        mountedSocket.off('activity:update');
+        try { mountedSocket.disconnect(); } catch (e) {}
+      }
     };
   }, []);
 
