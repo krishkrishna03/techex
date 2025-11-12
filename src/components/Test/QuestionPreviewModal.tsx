@@ -324,20 +324,27 @@ const QuestionPreviewModal: React.FC<QuestionPreviewModalProps> = ({
                             </span>
                           </div>
                           <div className="mb-3">
-                            {question.questionText && question.questionText.trim() !== '' ? (
-                              <p className="text-gray-900 font-medium">
+                            {question.questionText && question.questionText.trim() !== '' && (
+                              <p className="text-gray-900 font-medium mb-3">
                                 {question.questionText}
                               </p>
-                            ) : question.questionImageUrl ? (
+                            )}
+                            {question.questionImageUrl && question.questionImageUrl.trim() !== '' && (
                               <div className="mb-3">
                                 <img
                                   src={question.questionImageUrl}
                                   alt={`Question ${index + 1}`}
                                   className="max-w-full h-auto rounded-lg border shadow-sm"
                                   style={{ maxHeight: '400px' }}
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    console.error('Failed to load image:', question.questionImageUrl);
+                                  }}
                                 />
                               </div>
-                            ) : (
+                            )}
+                            {(!question.questionText || question.questionText.trim() === '') &&
+                             (!question.questionImageUrl || question.questionImageUrl.trim() === '') && (
                               <p className="text-gray-500 italic">(No question text or image)</p>
                             )}
                           </div>
@@ -383,16 +390,23 @@ const QuestionPreviewModal: React.FC<QuestionPreviewModalProps> = ({
                                 {key}
                               </span>
                               <div className="flex-1">
-                                {value && value.trim() !== '' ? (
+                                {value && value.trim() !== '' && (
                                   <span className="text-sm text-gray-700">{value}</span>
-                                ) : question.optionImages && question.optionImages[key as keyof typeof question.optionImages] ? (
+                                )}
+                                {question.optionImages && question.optionImages[key as keyof typeof question.optionImages] && (
                                   <img
                                     src={question.optionImages[key as keyof typeof question.optionImages]}
                                     alt={`Option ${key}`}
                                     className="mt-2 max-w-full h-auto rounded border"
                                     style={{ maxHeight: '200px' }}
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      console.error('Failed to load option image:', question.optionImages?.[key as keyof typeof question.optionImages]);
+                                    }}
                                   />
-                                ) : (
+                                )}
+                                {(!value || value.trim() === '') &&
+                                 (!question.optionImages || !question.optionImages[key as keyof typeof question.optionImages]) && (
                                   <span className="text-sm text-gray-500 italic">(No text or image)</span>
                                 )}
                                 {question.correctAnswer === key && (
