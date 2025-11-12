@@ -258,8 +258,8 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-white border-b px-6 py-4">
+    <div className="h-full w-full flex flex-col bg-gray-50">
+      <div className="bg-white border-b px-6 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Code className="w-6 h-6 text-blue-600" />
@@ -272,7 +272,7 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
             <select
               value={selectedLanguage}
               onChange={(e) => setSelectedLanguage(e.target.value)}
-              className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
             >
               {question.supported_languages.map(lang => (
                 <option key={lang} value={lang}>
@@ -280,13 +280,13 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
                 </option>
               ))}
             </select>
-            <div className="ml-4 text-xs text-gray-500">
+            <div className="text-xs text-gray-500 min-w-[60px]">
               {autosaveStatus === 'saving' ? 'Saving...' : autosaveStatus === 'saved' ? 'Saved' : ''}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 mt-3">
+        <div className="flex flex-wrap gap-2 mt-2">
           {question.tags.map(tag => (
             <span key={tag} className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs">
               {tag}
@@ -295,9 +295,9 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className={`${fullscreen ? 'w-1/3' : 'w-1/2'} border-r overflow-y-auto`}>
-          <div className="p-6 space-y-6">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        <div className={`${fullscreen ? 'w-1/3' : 'w-1/2'} border-r bg-white overflow-y-auto flex-shrink-0`}>
+          <div className="p-6 space-y-6 pb-12">
             <div>
               <button
                 onClick={() => setShowDescription(!showDescription)}
@@ -368,24 +368,26 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
           </div>
         </div>
 
-        <div className={`${fullscreen ? 'w-2/3' : 'w-1/2'} flex flex-col`}>
-          <div className="flex-1 p-4 overflow-hidden">
-            <CodeEditor
-              language={selectedLanguage}
-              initialCode={code}
-              onCodeChange={setCode}
-              height={fullscreen ? "calc(100vh - 140px)" : "calc(100vh - 300px)"}
-              forceFullscreen={fullscreen}
-            />
+        <div className={`${fullscreen ? 'w-2/3' : 'w-1/2'} flex flex-col min-h-0`}>
+          <div className="flex-1 p-4 bg-white flex flex-col min-h-0">
+            <div className="flex-1 min-h-0">
+              <CodeEditor
+                language={selectedLanguage}
+                initialCode={code}
+                onCodeChange={setCode}
+                height="100%"
+                forceFullscreen={fullscreen}
+              />
+            </div>
           </div>
 
-          <div className="border-t bg-white">
-            <div className="px-4 py-3 flex items-center justify-between border-b">
+          <div className="border-t bg-white flex-shrink-0">
+            <div className="px-4 py-2 flex items-center justify-between border-b">
               <button
                 onClick={() => setShowTestResults(!showTestResults)}
-                className="flex items-center gap-2 font-semibold text-gray-800"
+                className="flex items-center gap-2 font-semibold text-gray-800 text-sm"
               >
-                <Terminal className="w-5 h-5" />
+                <Terminal className="w-4 h-4" />
                 Output
                 {showTestResults ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
               </button>
@@ -393,7 +395,7 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
                 <button
                   onClick={handleRunCode}
                   disabled={isRunning}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2"
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 flex items-center gap-2 text-sm"
                 >
                   {isRunning ? <Loader className="w-4 h-4 animate-spin" /> : null}
                   Run Code
@@ -401,7 +403,7 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2 text-sm"
                 >
                   {isSubmitting ? <Loader className="w-4 h-4 animate-spin" /> : null}
                   Submit
@@ -424,7 +426,7 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
             )}
 
             {showTestResults && (
-              <div className="p-4 overflow-y-auto" style={{ maxHeight: '200px' }}>
+              <div className="p-4 overflow-y-auto bg-gray-50" style={{ maxHeight: '250px' }}>
                 {output && (
                   <div className="mb-4">
                     <pre className="bg-gray-900 text-green-400 p-3 rounded text-sm overflow-x-auto font-mono">
