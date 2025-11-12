@@ -11,7 +11,7 @@ import LoadingSpinner from '../../components/UI/LoadingSpinner';
 import StudentReportsPage from '../../components/Test/StudentReportsPage';
 import StudentPerformanceAnalytics from '../../components/Test/StudentPerformanceAnalytics';
 import DetailedTestReportModal from '../../components/Test/DetailedTestReportModal';
-import TCSStyleTestInterface from '../../components/Test/CleanTestInterface';
+import TCSStyleTestInterface from '../../components/Test/TCSTestInterface';
 import PracticeCoding from '../../components/Coding/PracticeCoding';
 
 interface College {
