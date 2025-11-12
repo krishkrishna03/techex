@@ -850,7 +850,7 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
                 ))}
               </div>
 
-              {selectedCodingQuestionId && (
+              {selectedCodingQuestionId ? (
                 <div ref={el => (codingInterfaceRef.current = el)} className="flex-1 border-t overflow-hidden">
                   <div className="h-[calc(100vh-180px)] w-full">
                     <CodingInterface
@@ -858,10 +858,16 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
                       fullscreen={mcqCompleted}
                       isPractice={test.testType === 'Practice'}
                       onSubmit={async (submissionId: string, score: number) => {
-                        // Optionally notify user and refresh state
                         alert(`Coding submission ${submissionId} scored ${score}`);
                       }}
                     />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <Code className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+                    <p className="text-lg font-medium">Select a coding question to begin</p>
                   </div>
                 </div>
               )}
