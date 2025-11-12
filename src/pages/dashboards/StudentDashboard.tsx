@@ -11,7 +11,7 @@ import LoadingSpinner from '../../components/UI/LoadingSpinner';
 import StudentReportsPage from '../../components/Test/StudentReportsPage';
 import StudentPerformanceAnalytics from '../../components/Test/StudentPerformanceAnalytics';
 import DetailedTestReportModal from '../../components/Test/DetailedTestReportModal';
-import ProfessionalTestInterface from '../../components/Test/ProfessionalTestInterface';
+import CleanTestInterface from '../../components/Test/CleanTestInterface';
 import PracticeCoding from '../../components/Coding/PracticeCoding';
 
 interface College {
@@ -334,10 +334,10 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
   console.log('StudentDashboard render - activeTest:', activeTest?._id, 'testStartTime:', testStartTime);
 
   if (activeTest && testStartTime) {
-    console.log('Rendering professional test interface');
+    console.log('Rendering clean test interface');
 
     return (
-      <ProfessionalTestInterface
+      <CleanTestInterface
         test={activeTest}
         startTime={testStartTime}
         onSubmit={handleSubmitTest}
