@@ -468,38 +468,70 @@ async function runCodeInSandbox(code, language, input) {
           reject(new Error(`Runtime Error: ${error.message}`));
         }
       } else if (language === 'python') {
-        // For Python, we'll use VM2 or similar for now
-        // This is a simplified version - for production, use proper sandboxing
-        const { VM } = require('vm2');
-        const vm = new VM({
-          timeout,
-          sandbox: {}
-        });
+        // For Python execution, we'll use child_process to run Python
+        const { execSync } = require('child_process');
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
 
         try {
-          // Python-like execution simulation
-          const pythonOutput = [];
-          const pythonCode = `
-            const input = ${JSON.stringify(input)};
-            const lines = input.split('\\n');
-            let lineIndex = 0;
+          // Create a temporary file for the Python script
+          const tempDir = os.tmpdir();
+          const tempFile = path.join(tempDir, `temp_${Date.now()}.py`);
 
-            function input() {
-              return lines[lineIndex++] || '';
+          // Wrap the user code to provide input automatically
+          const wrappedCode = `
+import sys
+from io import StringIO
+
+# Prepare input
+input_data = ${JSON.stringify(input)}
+sys.stdin = StringIO(input_data)
+
+# User's code
+${code}
+`;
+
+          // Write the code to a temporary file
+          fs.writeFileSync(tempFile, wrappedCode, 'utf8');
+
+          try {
+            // Execute Python script
+            const result = execSync(`python "${tempFile}"`, {
+              encoding: 'utf8',
+              timeout: timeout,
+              maxBuffer: 10 * 1024 * 1024,
+              stdio: ['pipe', 'pipe', 'pipe'],
+              shell: true,
+              windowsHide: true
+            });
+
+            // Clean up - ensure file is deleted even if there's an error
+            try {
+              fs.unlinkSync(tempFile);
+            } catch (cleanupError) {
+              console.warn('Warning: Failed to delete temp file:', tempFile);
             }
-
-            function print(...args) {
-              pythonOutput.push(args.join(' '));
+            
+            resolve(result.trim());
+          } catch (execError) {
+            // Clean up on error
+            try {
+              fs.unlinkSync(tempFile);
+            } catch (cleanupError) {
+              console.warn('Warning: Failed to delete temp file after error:', tempFile);
             }
-
-            // User code would go here
-            // For now, return a placeholder
-            print("Python execution is not fully supported yet");
-
-            pythonOutput.join('\\n');
-          `;
-
-          resolve('Python execution requires Python runtime. Please use JavaScript for now.');
+            
+            // Extract the actual error message from stderr or stdout
+            let errorMsg = execError.message;
+            if (execError.stderr && typeof execError.stderr === 'string' && execError.stderr.trim()) {
+              errorMsg = execError.stderr.trim();
+            } else if (execError.stdout && typeof execError.stdout === 'string' && execError.stdout.trim()) {
+              errorMsg = execError.stdout.trim();
+            }
+            
+            reject(new Error(`Python Runtime Error: ${errorMsg}`));
+          }
         } catch (error) {
           reject(new Error(`Python Error: ${error.message}`));
         }
