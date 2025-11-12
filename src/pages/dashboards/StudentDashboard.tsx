@@ -11,7 +11,7 @@ import LoadingSpinner from '../../components/UI/LoadingSpinner';
 import StudentReportsPage from '../../components/Test/StudentReportsPage';
 import StudentPerformanceAnalytics from '../../components/Test/StudentPerformanceAnalytics';
 import DetailedTestReportModal from '../../components/Test/DetailedTestReportModal';
-import TCSStyleTestInterface from '../../components/Test/TCSStyleTestInterface';
+import TCSStyleTestInterface from '../../components/Test/CleanTestInterface';
 import PracticeCoding from '../../components/Coding/PracticeCoding';
 
 interface College {
@@ -233,7 +233,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
     }
   };
 
-  const handleSubmitTest = async (answers: any[], timeSpent: number, violations?: number) => {
+  const handleSubmitTest = async (answers: any[], timeSpent: number, codingSubmissions?: any[]) => {
     if (!activeTest || !testStartTime) return;
 
     type SubmitTestResponse = {
@@ -249,7 +249,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ activeTab }) => {
         answers,
         testStartTime,
         timeSpent,
-        violations
+        codingSubmissions
       ) as SubmitTestResponse;
       setActiveTest(null);
       setTestStartTime(null);
