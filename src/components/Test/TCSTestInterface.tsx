@@ -70,7 +70,6 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
   const [showQuestionPalette, setShowQuestionPalette] = useState(true);
   const [mcqCompleted, setMcqCompleted] = useState(false);
   const [selectedCodingQuestionId, setSelectedCodingQuestionId] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const hasMCQ = (test.hasSections && test.sections && test.sections.length > 0) || test.questions.length > 0;
   const currentSection = test.hasSections && test.sections ? test.sections[currentSectionIndex] : null;
@@ -113,20 +112,10 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
       }
     };
 
-    const handleFullscreenChange = () => {
-      if (!document.fullscreenElement && !showInstructions) {
-        setViolations(prev => prev + 1);
-        alert('⚠️ Warning: Fullscreen exit detected! Please return to fullscreen mode.');
-        enterFullscreen();
-      }
-    };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [showInstructions]);
 
@@ -136,22 +125,12 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
     }
   }, [currentQuestionIndex, currentSectionIndex]);
 
-  const enterFullscreen = async () => {
-    try {
-      if (containerRef.current) {
-        await containerRef.current.requestFullscreen();
-      }
-    } catch (error) {
-      console.error('Error entering fullscreen:', error);
-    }
-  };
 
-  const handleStartTest = async () => {
+  const handleStartTest = () => {
     if (!agreedToTerms) {
       alert('Please accept the terms and conditions to proceed.');
       return;
     }
-    await enterFullscreen();
     setShowInstructions(false);
   };
 
@@ -286,20 +265,20 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
 
   if (showInstructions) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4 overflow-y-auto">
-        <div className="max-w-4xl w-full bg-white rounded-2xl shadow-2xl">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-6 rounded-t-2xl">
+      <div className="fixed inset-0 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div className="max-w-4xl w-full bg-white rounded-xl sm:rounded-2xl shadow-2xl max-h-[95vh] overflow-y-auto">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 sm:px-6 md:px-8 py-4 md:py-6 rounded-t-xl sm:rounded-t-2xl">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2">{test.testName}</h1>
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold mb-2">{test.testName}</h1>
                 <p className="text-blue-100">{test.testDescription}</p>
               </div>
-              <Shield className="w-16 h-16 opacity-80" />
+              <Shield className="w-12 h-12 sm:w-16 sm:h-16 opacity-80" />
             </div>
           </div>
 
-          <div className="p-8">
-            <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="p-4 sm:p-6 md:p-8">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
               <div className="bg-blue-50 p-4 rounded-lg text-center">
                 <div className="text-2xl font-bold text-blue-600">{test.numberOfQuestions}</div>
                 <div className="text-sm text-gray-600">Questions</div>
@@ -440,7 +419,7 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
 
   if (mcqCompleted && test.hasCodingSection) {
     return (
-      <div ref={containerRef} className="fixed inset-0 bg-gray-100 flex flex-col">
+      <div className="min-h-screen bg-gray-100 flex flex-col">
         <div className="bg-white shadow-md border-b-2 border-green-600 px-6 py-3">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
@@ -463,30 +442,30 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          <div className="w-64 bg-white border-r overflow-y-auto">
-            <div className="p-4 bg-gray-50 border-b">
-              <h3 className="font-semibold text-gray-900">Coding Questions</h3>
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+          <div className="w-full md:w-64 bg-white md:border-r overflow-y-auto">
+            <div className="p-3 md:p-4 bg-gray-50 border-b">
+              <h3 className="font-semibold text-gray-900 text-sm md:text-base">Coding Questions</h3>
             </div>
-            <div className="p-2">
+            <div className="p-2 flex md:flex-col gap-2 overflow-x-auto md:overflow-x-visible">
               {test.codingQuestions?.map((cq: any, idx: number) => (
                 <button
                   key={cq._id || cq.questionId || idx}
                   onClick={() => setSelectedCodingQuestionId(cq._id || cq.questionId || cq.id)}
-                  className={`w-full text-left p-3 mb-2 rounded-lg border-2 transition-all ${
+                  className={`flex-shrink-0 md:flex-shrink md:w-full text-left p-3 md:mb-2 rounded-lg border-2 transition-all ${
                     selectedCodingQuestionId === (cq._id || cq.questionId || cq.id)
                       ? 'border-green-500 bg-green-50'
                       : 'border-gray-200 hover:border-green-300 hover:bg-gray-50'
                   }`}
                 >
-                  <div className="font-medium text-sm text-gray-800">{cq.title || `Question ${idx + 1}`}</div>
+                  <div className="font-medium text-sm text-gray-800 whitespace-nowrap md:whitespace-normal">{cq.title || `Question ${idx + 1}`}</div>
                   <div className="text-xs text-gray-500 mt-1">Points: {cq.points || 100}</div>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden min-h-[500px] md:min-h-0">
             {selectedCodingQuestionId ? (
               <CodingInterface
                 questionId={selectedCodingQuestionId}
@@ -513,37 +492,44 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
   const counts = getCounts();
 
   return (
-    <div ref={containerRef} className="fixed inset-0 bg-gray-100 flex flex-col">
-      <div className="bg-white shadow-md border-b-2 border-blue-600 px-6 py-3">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-gray-900">{test.testName}</h1>
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      <div className="bg-white shadow-md border-b-2 border-blue-600 px-4 md:px-6 py-3">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 md:gap-0">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4">
+            <h1 className="text-lg md:text-xl font-bold text-gray-900">{test.testName}</h1>
             {currentSection && (
               <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                 Section {currentSectionIndex + 1}: {currentSection.sectionName}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 md:gap-6">
+            <button
+              onClick={() => setShowQuestionPalette(!showQuestionPalette)}
+              className="lg:hidden px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium"
+            >
+              <List className="w-4 h-4" />
+              Palette
+            </button>
             {violations > 0 && (
               <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium flex items-center gap-2">
                 <AlertCircle className="w-4 h-4" />
                 {violations} Violations
               </span>
             )}
-            <div className="flex items-center gap-2 text-lg font-bold text-gray-900">
-              <Clock className="w-6 h-6 text-blue-600" />
+            <div className="flex items-center gap-2 text-base md:text-lg font-bold text-gray-900">
+              <Clock className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
               {formatTime(sectionTimeLeft)}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex items-start justify-center p-8 overflow-y-auto">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 flex items-start justify-center p-4 md:p-6 lg:p-8 overflow-y-auto">
           <div className="max-w-4xl w-full">
-            <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
-              <div className="flex justify-between items-center mb-6 pb-4 border-b">
+            <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 lg:p-8 mb-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 mb-6 pb-4 border-b">
                 <div>
                   <span className="text-lg font-semibold text-gray-900">
                     Question {currentQuestionIndex + 1} of {currentQuestions.length}
@@ -554,7 +540,7 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
                 </span>
               </div>
 
-              <h3 className="text-xl font-medium text-gray-900 mb-6 leading-relaxed">
+              <h3 className="text-lg md:text-xl font-medium text-gray-900 mb-6 leading-relaxed">
                 {currentQuestion?.questionText || 'Question not available'}
               </h3>
 
@@ -604,21 +590,21 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <div className="flex justify-between items-center gap-4">
+            <div className="bg-white rounded-lg shadow-lg p-4 md:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 sm:gap-4">
                 <button
                   onClick={() => handleNavigateQuestion('prev')}
                   disabled={currentQuestionIndex === 0}
-                  className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 font-medium"
+                  className="px-4 md:px-6 py-2 md:py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium text-sm md:text-base"
                 >
                   <ChevronLeft className="w-5 h-5" />
                   Previous
                 </button>
 
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-2 sm:gap-3">
                   <button
                     onClick={handleMarkForReviewAndNext}
-                    className="px-5 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 font-medium"
+                    className="px-3 md:px-5 py-2 md:py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2 font-medium text-sm md:text-base"
                   >
                     <Bookmark className="w-5 h-5" />
                     Mark for Review
@@ -627,14 +613,14 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
                   <button
                     onClick={handleClearResponse}
                     disabled={!answers[currentQuestion?._id]}
-                    className="px-5 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
+                    className="px-3 md:px-5 py-2 md:py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium text-sm md:text-base"
                   >
                     Clear
                   </button>
 
                   <button
                     onClick={handleSaveAndNext}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium"
+                    className="px-4 md:px-6 py-2 md:py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 font-medium text-sm md:text-base"
                   >
                     Save & Next
                     <ChevronRight className="w-5 h-5" />
@@ -646,7 +632,7 @@ const TCSTestInterface: React.FC<TCSTestInterfaceProps> = ({
         </div>
 
         {showQuestionPalette && (
-          <div className="w-80 bg-white border-l shadow-lg overflow-y-auto">
+          <div className="fixed lg:relative inset-0 lg:inset-auto z-50 lg:z-auto w-full lg:w-80 bg-white lg:border-l shadow-lg overflow-y-auto">
             <div className="p-4 bg-gray-50 border-b flex justify-between items-center sticky top-0">
               <div className="flex items-center gap-2">
                 <List className="w-5 h-5 text-gray-600" />

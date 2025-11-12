@@ -156,31 +156,26 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
     setTestResults([]);
 
     try {
-      interface RunResponse {
-        data: {
-          output?: string;
-          testResults?: TestResult[];
-          error?: string;
-        }
-      }
-      const response = await api.post<RunResponse>('/coding/run', {
+      const response = await api.post('/coding/run', {
         questionId,
         code,
         language: selectedLanguage.toLowerCase()
       });
 
-      if (response.data.error) {
-        setOutput('Error: ' + response.data.error);
+      const data = response?.data || response || {};
+
+      if (data.error) {
+        setOutput('Error: ' + data.error);
       } else {
-        setOutput(response.data.output || '');
-        if (response.data.testResults) {
-          setTestResults(response.data.testResults);
+        setOutput(data.output || 'Code executed successfully');
+        if (data.testResults && Array.isArray(data.testResults)) {
+          setTestResults(data.testResults);
         }
       }
     } catch (error: any) {
+      console.error('Run code error:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Error running code';
       setOutput('Error: ' + errorMessage);
-      console.error('Run code error:', error);
     } finally {
       setIsRunning(false);
     }
