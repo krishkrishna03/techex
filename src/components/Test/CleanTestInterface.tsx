@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Clock, CheckCircle, AlertCircle, ChevronRight, X, Monitor, Shield
+  Clock, CheckCircle, AlertTriangle, Bookmark,
+  ChevronRight, ChevronLeft, List, X,
+  Monitor, Shield, Eye, AlertCircle, Code
 } from 'lucide-react';
 import LoadingSpinner from '../UI/LoadingSpinner';
+import CodingInterface from '../Coding/CodingInterface';
 
 interface Question {
   _id: string;
@@ -45,12 +48,14 @@ interface Test {
   totalMarks: number;
   duration: number;
   questions: Question[];
+  hasCodingSection?: boolean;
+  codingQuestions?: any[];
 }
 
 interface CleanTestInterfaceProps {
   test: Test;
   startTime: Date;
-  onSubmit: (answers: any[], timeSpent: number) => Promise<void>;
+  onSubmit: (answers: any[], timeSpent: number, violations?: number) => Promise<void>;
   onExit: () => void;
 }
 
@@ -62,37 +67,114 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
 }) => {
   const [showInstructions, setShowInstructions] = useState(true);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [, setIsFullscreen] = useState(false);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [currentQuestionInSection, setCurrentQuestionInSection] = useState(0);
   const [answers, setAnswers] = useState<{ [questionId: string]: string }>({});
+  const [markedForReview, setMarkedForReview] = useState<{ [questionId: string]: boolean }>({});
+  const [visitedQuestions, setVisitedQuestions] = useState<{ [questionId: string]: boolean }>({});
   const [timeLeft, setTimeLeft] = useState(test.duration * 60);
+  const [sectionTimeLeft, setSectionTimeLeft] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+  const [startCodingFlow, setStartCodingFlow] = useState(false);
+  const [showQuestionPalette, setShowQuestionPalette] = useState(true);
+  const [selectedCodingQuestionId, setSelectedCodingQuestionId] = useState<string | null>(null);
+  // mcqCompleted: When true, MCQ section hides and coding section takes full screen
+  // This enables sequential flow: MCQ → [Submit] → Coding (fullscreen)
+  const [mcqCompleted, setMcqCompleted] = useState(false);
+  const codingInterfaceRef = useRef<HTMLDivElement | null>(null);
+  const [tabSwitches, setTabSwitches] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (test.hasSections && test.sections) {
+      setSectionTimeLeft(test.sections.map(section => section.sectionDuration * 60));
+    }
+  }, [test]);
 
   useEffect(() => {
     if (showInstructions) return;
 
     const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          handleAutoSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
+      if (test.hasSections && test.sections) {
+        setSectionTimeLeft(prev => {
+          const newTimes = [...prev];
+          if (newTimes[currentSectionIndex] > 0) {
+            newTimes[currentSectionIndex] -= 1;
+          } else {
+            if (currentSectionIndex < test.sections!.length - 1) {
+              setCurrentSectionIndex(currentSectionIndex + 1);
+              setCurrentQuestionInSection(0);
+            } else {
+              handleAutoSubmit();
+            }
+          }
+          return newTimes;
+        });
+      } else {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            handleAutoSubmit();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }
     }, 1000);
 
     return () => clearInterval(timer);
+  }, [showInstructions, currentSectionIndex, test.hasSections]);
+
+  // Ensure we are in fullscreen when switching to coding phase
+  useEffect(() => {
+    if (mcqCompleted) {
+      // try to ensure fullscreen for the coding experience
+      if (!document.fullscreenElement) {
+        enterFullscreen().catch(() => {});
+      }
+      // focus coding area if available
+      if (codingInterfaceRef.current) {
+        try { (codingInterfaceRef.current as HTMLElement).focus(); } catch (e) {}
+      }
+    }
+  }, [mcqCompleted]);
+
+  useEffect(() => {
+    if (showInstructions) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabSwitches(prev => prev + 1);
+        alert('⚠️ Warning: You switched tabs! This activity is being monitored.');
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && !showInstructions) {
+        setIsFullscreen(false);
+        alert('⚠️ Warning: You exited fullscreen! Please stay in fullscreen mode.');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
   }, [showInstructions]);
 
   const enterFullscreen = async () => {
     try {
       if (containerRef.current) {
         await containerRef.current.requestFullscreen();
+        setIsFullscreen(true);
       }
     } catch (error) {
       console.error('Error entering fullscreen:', error);
+      alert('Please allow fullscreen mode to continue with the test.');
     }
   };
 
@@ -101,8 +183,17 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
       alert('Please accept the terms and conditions to proceed.');
       return;
     }
+
     await enterFullscreen();
     setShowInstructions(false);
+    const currentQs = getCurrentQuestions();
+    if (currentQs && currentQs.length > 0) {
+      const firstQuestion = currentQs[0];
+      setVisitedQuestions({ [firstQuestion._id]: true });
+    } else {
+      // No MCQ questions (coding-only test). Initialize visitedQuestions empty.
+      setVisitedQuestions({});
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -116,50 +207,124 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const getCurrentSection = (): Section | null => {
+  const getCurrentSection = () => {
     if (test.hasSections && test.sections) {
       return test.sections[currentSectionIndex];
     }
     return null;
   };
 
-  const getAllQuestions = (): Question[] => {
+  const getCurrentQuestions = () => {
     if (test.hasSections && test.sections) {
-      return test.sections.flatMap(s => s.questions);
+      return test.sections[currentSectionIndex].questions;
     }
     return test.questions;
   };
 
-  const getCurrentQuestion = (): Question | null => {
-    const allQuestions = getAllQuestions();
-    return allQuestions[currentQuestionIndex] || null;
+  const getCurrentTime = () => {
+    if (test.hasSections && test.sections) {
+      return sectionTimeLeft[currentSectionIndex];
+    }
+    return timeLeft;
   };
 
-  const getTotalQuestions = (): number => {
-    return getAllQuestions().length;
-  };
-
-  const getAnsweredCount = (): number => {
-    return Object.keys(answers).length;
-  };
-
-  const handleAnswerSelect = (questionId: string, answer: string) => {
+  const handleAnswerChange = (questionId: string, answer: string) => {
     setAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
-  const handleNext = () => {
-    const totalQuestions = getTotalQuestions();
-    if (currentQuestionIndex < totalQuestions - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
-    } else {
-      setShowSubmitConfirm(true);
+  const handleClearResponse = () => {
+    const currentQ = getCurrentQuestions()[currentQuestionInSection];
+    if (!currentQ) return;
+    setAnswers(prev => {
+      const newAnswers = { ...prev };
+      delete newAnswers[currentQ._id];
+      return newAnswers;
+    });
+  };
+
+  const handleMarkForReview = () => {
+    const currentQ = getCurrentQuestions()[currentQuestionInSection];
+    if (!currentQ) return;
+    setMarkedForReview(prev => ({
+      ...prev,
+      [currentQ._id]: !prev[currentQ._id]
+    }));
+  };
+
+  const handleSaveAndNext = () => {
+    const questions = getCurrentQuestions();
+    if (currentQuestionInSection < questions.length - 1) {
+      const nextIndex = currentQuestionInSection + 1;
+      setCurrentQuestionInSection(nextIndex);
+      setVisitedQuestions(prev => ({ ...prev, [questions[nextIndex]._id]: true }));
+    } else if (test.hasSections && test.sections && currentSectionIndex < test.sections.length - 1) {
+      setCurrentSectionIndex(currentSectionIndex + 1);
+      setCurrentQuestionInSection(0);
+      const nextSectionQuestions = test.sections[currentSectionIndex + 1].questions;
+      setVisitedQuestions(prev => ({ ...prev, [nextSectionQuestions[0]._id]: true }));
     }
   };
 
-  const handlePrevious = () => {
-    if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1);
+  const handleMarkForReviewAndNext = () => {
+    handleMarkForReview();
+    handleSaveAndNext();
+  };
+
+  const handleNavigateToQuestion = (questionIndex: number, sectionIndex?: number) => {
+    if (sectionIndex !== undefined && sectionIndex !== currentSectionIndex) {
+      setCurrentSectionIndex(sectionIndex);
     }
+    setCurrentQuestionInSection(questionIndex);
+    const questions = sectionIndex !== undefined && test.sections
+      ? test.sections[sectionIndex].questions
+      : getCurrentQuestions();
+    setVisitedQuestions(prev => ({ ...prev, [questions[questionIndex]._id]: true }));
+  };
+
+  const getQuestionStatus = (question: Question) => {
+    if (answers[question._id] && markedForReview[question._id]) {
+      return 'answered-marked';
+    }
+    if (answers[question._id]) {
+      return 'answered';
+    }
+    if (markedForReview[question._id]) {
+      return 'marked';
+    }
+    if (visitedQuestions[question._id]) {
+      return 'not-answered';
+    }
+    return 'not-visited';
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'answered':
+        return 'bg-green-500 text-white';
+      case 'not-answered':
+        return 'bg-red-500 text-white';
+      case 'marked':
+        return 'bg-purple-500 text-white';
+      case 'answered-marked':
+        return 'bg-purple-500 text-white';
+      case 'not-visited':
+        return 'bg-gray-300 text-gray-700';
+      default:
+        return 'bg-gray-200 text-gray-700';
+    }
+  };
+
+  const getCounts = () => {
+    const allQuestions = test.hasSections && test.sections
+      ? test.sections.flatMap(s => s.questions)
+      : test.questions;
+
+    return {
+      answered: allQuestions.filter(q => answers[q._id] && !markedForReview[q._id]).length,
+      notAnswered: allQuestions.filter(q => !answers[q._id] && visitedQuestions[q._id]).length,
+      marked: allQuestions.filter(q => markedForReview[q._id]).length,
+      notVisited: allQuestions.filter(q => !visitedQuestions[q._id]).length,
+    };
   };
 
   const handleAutoSubmit = async () => {
@@ -169,11 +334,10 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
 
   const handleSubmit = async (isAutoSubmit = false) => {
     if (submitting) return;
+    const counts = getCounts();
 
-    const unansweredCount = getTotalQuestions() - getAnsweredCount();
-
-    if (!isAutoSubmit && unansweredCount > 0) {
-      const confirmMessage = `You have ${unansweredCount} unanswered questions. Are you sure you want to submit?`;
+    if (!isAutoSubmit && (counts.notAnswered > 0 || counts.notVisited > 0)) {
+      const confirmMessage = `You have ${counts.notAnswered + counts.notVisited} unanswered questions. Are you sure you want to submit?`;
       if (!window.confirm(confirmMessage)) {
         return;
       }
@@ -182,7 +346,10 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
     try {
       setSubmitting(true);
 
-      const allQuestions = getAllQuestions();
+      const allQuestions = test.hasSections && test.sections
+        ? test.sections.flatMap(s => s.questions)
+        : test.questions;
+
       const submissionAnswers = allQuestions.map(question => ({
         questionId: question._id,
         selectedAnswer: answers[question._id] || 'A',
@@ -191,89 +358,158 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
 
       const timeSpent = Math.floor((Date.now() - startTime.getTime()) / 1000 / 60);
 
+      // If the test includes a coding section, submit MCQ answers first then transition
+      // to the coding interface (full-screen). Do NOT exit fullscreen yet.
+      if (test.hasCodingSection && test.codingQuestions && test.codingQuestions.length > 0) {
+        await onSubmit(submissionAnswers, timeSpent, tabSwitches);
+
+        // Mark MCQ part completed and open coding UI in full screen
+        setMcqCompleted(true);
+        setShowQuestionPalette(false);
+        // close the confirm modal used to start coding
+        setShowConfirmSubmit(false);
+        const firstCoding = test.codingQuestions[0];
+        const firstId = firstCoding && (firstCoding._id || firstCoding.questionId || firstCoding.id);
+        if (firstId) setSelectedCodingQuestionId(firstId);
+
+        // keep submitting false so student can continue with coding
+        setSubmitting(false);
+        return;
+      }
+
+      // No coding section: exit fullscreen and finalize submission
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       }
 
-      await onSubmit(submissionAnswers, timeSpent);
+      await onSubmit(submissionAnswers, timeSpent, tabSwitches);
+      setSubmitting(false);
+      // close the interface after final submit
+      onExit();
     } catch (error) {
       console.error('Submit error:', error);
       alert('Failed to submit test. Please try again.');
       setSubmitting(false);
+    } finally {
+      // Reset any transient intent to start coding flow when modal closes
+      setStartCodingFlow(false);
     }
   };
 
-  const currentQuestion = getCurrentQuestion();
-  const currentSection = getCurrentSection();
-  const totalQuestions = getTotalQuestions();
-  const answeredCount = getAnsweredCount();
+  const currentQuestions = getCurrentQuestions();
+  const currentQuestion = currentQuestions && currentQuestions.length > 0 ? currentQuestions[currentQuestionInSection] : null;
+  const currentTime = getCurrentTime();
+  const counts = getCounts();
+  const hasMCQ = (test.hasSections && test.sections && test.sections.some(s => s.questions && s.questions.length > 0))
+    || (test.questions && test.questions.length > 0);
 
   if (showInstructions) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="max-w-4xl w-full bg-white rounded-xl shadow-2xl overflow-hidden">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-8">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
+        <div className="max-w-4xl w-full bg-white rounded-2xl shadow-2xl overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold mb-2">{test.testName}</h1>
-                <p className="text-blue-100 text-lg">{test.subject}</p>
+                <p className="text-blue-100">{test.subject} • {test.testType || 'Assessment'}</p>
               </div>
-              <Shield className="w-20 h-20 text-blue-200 opacity-50" />
+              <Shield className="w-16 h-16 text-blue-200" />
             </div>
           </div>
 
           <div className="p-8">
-            <div className="mb-8 grid grid-cols-3 gap-6">
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl text-center border-2 border-blue-200">
-                <div className="text-3xl font-bold text-blue-700">{test.numberOfQuestions}</div>
-                <div className="text-sm text-gray-600 mt-1 font-medium">Questions</div>
+            <div className="mb-8 grid grid-cols-3 gap-4">
+              <div className="bg-blue-50 p-4 rounded-lg text-center border border-blue-200">
+                <div className="text-2xl font-bold text-blue-600">{test.numberOfQuestions}</div>
+                <div className="text-sm text-gray-600">Questions</div>
               </div>
-              <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl text-center border-2 border-green-200">
-                <div className="text-3xl font-bold text-green-700">{test.duration}</div>
-                <div className="text-sm text-gray-600 mt-1 font-medium">Minutes</div>
+              <div className="bg-green-50 p-4 rounded-lg text-center border border-green-200">
+                <div className="text-2xl font-bold text-green-600">{test.duration}</div>
+                <div className="text-sm text-gray-600">Minutes</div>
               </div>
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-xl text-center border-2 border-purple-200">
-                <div className="text-3xl font-bold text-purple-700">{test.totalMarks}</div>
-                <div className="text-sm text-gray-600 mt-1 font-medium">Total Marks</div>
+              <div className="bg-purple-50 p-4 rounded-lg text-center border border-purple-200">
+                <div className="text-2xl font-bold text-purple-600">{test.totalMarks}</div>
+                <div className="text-sm text-gray-600">Total Marks</div>
               </div>
             </div>
 
-            <div className="mb-8 space-y-4">
-              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-5 rounded-r-lg">
-                <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-                  <AlertCircle className="text-yellow-600" />
-                  Important Instructions
-                </h3>
-                <ul className="list-disc list-inside space-y-2 text-gray-700 text-sm">
-                  <li>The test will be conducted in <strong>FULLSCREEN MODE</strong></li>
-                  <li>Navigate through questions one at a time using Next/Previous buttons</li>
-                  <li>You can change your answers before final submission</li>
-                  <li>The test will auto-submit when time expires</li>
-                  <li>Ensure stable internet connection throughout the test</li>
-                </ul>
-              </div>
+            <div className="mb-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <AlertCircle className="text-orange-500" />
+                Important Instructions
+              </h2>
 
-              <div className="bg-blue-50 border-l-4 border-blue-400 p-5 rounded-r-lg">
-                <h3 className="font-bold text-gray-900 mb-3">Navigation Guide</h3>
-                <ul className="list-disc list-inside space-y-2 text-gray-700 text-sm">
-                  <li><strong>Next Button:</strong> Proceed to the next question</li>
-                  <li><strong>Previous Button:</strong> Go back to review previous questions</li>
-                  <li>Progress is automatically saved as you answer</li>
-                  <li>You must answer questions in order (sequential navigation)</li>
-                </ul>
+              <div className="space-y-4">
+                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
+                  <h3 className="font-semibold text-gray-900 mb-2">General Instructions:</h3>
+                  <ul className="list-disc list-inside space-y-2 text-gray-700 text-sm">
+                    <li>The test will be conducted in <strong>FULLSCREEN MODE</strong></li>
+                    <li>Do not switch tabs or minimize the window during the test</li>
+                    <li>Any suspicious activity will be recorded and may result in test termination</li>
+                    <li>The test will auto-submit when time expires</li>
+                    <li>Ensure stable internet connection throughout the test</li>
+                  </ul>
+                </div>
+
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                  <h3 className="font-semibold text-gray-900 mb-2">Navigation & Controls:</h3>
+                  <ul className="list-disc list-inside space-y-2 text-gray-700 text-sm">
+                    <li><strong>Save & Next:</strong> Save your answer and move to next question</li>
+                    <li><strong>Mark for Review & Next:</strong> Mark question for later review and move to next</li>
+                    <li><strong>Clear Response:</strong> Clear your selected answer for current question</li>
+                    <li><strong>Question Palette:</strong> Click on question numbers to navigate directly</li>
+                  </ul>
+                </div>
+
+                <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                  <h3 className="font-semibold text-gray-900 mb-2">Question Status Legend:</h3>
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded bg-green-500"></div>
+                      <span className="text-sm">Answered</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded bg-red-500"></div>
+                      <span className="text-sm">Not Answered</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded bg-purple-500"></div>
+                      <span className="text-sm">Marked for Review</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded bg-gray-300"></div>
+                      <span className="text-sm">Not Visited</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+                  <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                    <AlertTriangle className="text-red-500" />
+                    Prohibited Activities:
+                  </h3>
+                  <ul className="list-disc list-inside space-y-2 text-gray-700 text-sm">
+                    <li>Switching to other tabs or applications</li>
+                    <li>Using external resources or materials</li>
+                    <li>Taking screenshots or recording the screen</li>
+                    <li>Communicating with others during the test</li>
+                    <li>Using mobile phones or other devices</li>
+                  </ul>
+                </div>
               </div>
             </div>
 
             <div className="mb-6">
-              <label className="flex items-start gap-3 cursor-pointer p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+              <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={agreedToTerms}
                   onChange={(e) => setAgreedToTerms(e.target.checked)}
                   className="mt-1 w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-gray-700 text-sm">
+                <span className="text-gray-700">
                   I have read and understood all the instructions. I agree to follow all the rules and guidelines during the test.
+                  I understand that any violation may result in disqualification.
                 </span>
               </label>
             </div>
@@ -281,7 +517,7 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
             <div className="flex justify-center gap-4">
               <button
                 onClick={onExit}
-                className="px-8 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
+                className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium transition-colors"
               >
                 Cancel
               </button>
@@ -290,8 +526,8 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
                 disabled={!agreedToTerms}
                 className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors flex items-center gap-2"
               >
-                <Monitor className="w-5 h-5" />
-                Start Test
+                <Monitor />
+                Start Test in Fullscreen
               </button>
             </div>
           </div>
@@ -300,42 +536,42 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
     );
   }
 
-  if (!currentQuestion) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner />
-      </div>
-    );
-  }
-
   return (
-    <div ref={containerRef} className="fixed inset-0 bg-gray-50 flex flex-col">
-      <div className="bg-white shadow-md border-b-2 border-blue-600">
-        <div className="max-w-6xl mx-auto px-8 py-4">
+    <div ref={containerRef} className="fixed inset-0 bg-gray-100 flex flex-col">
+  <div className="bg-white shadow-md border-b-2 border-blue-600 sticky top-0 z-50">
+        <div className="px-6 py-3">
           <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{test.testName}</h1>
-              {currentSection && (
-                <p className="text-sm text-gray-600 mt-1">
-                  Section {currentSectionIndex + 1}: {currentSection.sectionName}
-                </p>
+            <div className="flex items-center gap-4">
+              <h1 className="text-xl font-bold text-gray-900">{test.testName}</h1>
+              {test.hasSections && test.sections && (
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                  Section {currentSectionIndex + 1}: {getCurrentSection()?.sectionName}
+                </span>
               )}
             </div>
 
             <div className="flex items-center gap-6">
-              <div className={`flex items-center gap-3 px-5 py-3 rounded-lg font-bold ${
-                timeLeft <= 300 ? 'bg-red-100 text-red-700' :
-                timeLeft <= 600 ? 'bg-orange-100 text-orange-700' :
+              {tabSwitches > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-red-100 border border-red-300 rounded-lg">
+                  <Eye className="w-4 h-4 text-red-600" />
+                  <span className="text-sm font-medium text-red-700">
+                    Violations: {tabSwitches}
+                  </span>
+                </div>
+              )}
+
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
+                currentTime <= 300 ? 'bg-red-100 text-red-700' :
+                currentTime <= 600 ? 'bg-orange-100 text-orange-700' :
                 'bg-green-100 text-green-700'
               }`}>
-                <Clock className="w-6 h-6" />
-                <span className="font-mono text-2xl">{formatTime(timeLeft)}</span>
+                <Clock className="w-5 h-5" />
+                <span className="font-mono text-lg font-bold">{formatTime(currentTime)}</span>
               </div>
 
               <button
-                onClick={() => setShowSubmitConfirm(true)}
-                disabled={submitting}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2 disabled:opacity-50"
+                onClick={() => setShowConfirmSubmit(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2"
               >
                 <CheckCircle className="w-5 h-5" />
                 Submit
@@ -345,56 +581,50 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto px-8 py-8">
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-bold mb-1">
-                    Question {currentQuestionIndex + 1} of {totalQuestions}
-                  </h2>
-                  <p className="text-blue-100 text-sm">
-                    Progress: {answeredCount} answered
-                  </p>
+  <div className="flex-1 flex overflow-hidden">
+        {/* 
+          MCQ Section: Hidden when mcqCompleted is true
+          Sequential flow: MCQ displayed first, after submission coding takes full screen
+        */}
+        {!mcqCompleted && (
+        <div className={`${!hasMCQ ? 'hidden' : 'w-[420px] flex-shrink-0'} overflow-y-auto p-6`}>
+          <div className="max-w-md mx-auto">
+              <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
+                <div className="flex justify-between items-center mb-4 pb-4 border-b">
+                  <div>
+                    <span className="text-sm text-gray-600">Question {currentQuestionInSection + 1} of {currentQuestions.length}</span>
+                    {test.hasSections && (
+                      <span className="ml-4 text-sm text-gray-600">
+                        Section {currentSectionIndex + 1} of {test.sections!.length}
+                      </span>
+                    )}
+                  </div>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                    {currentQuestion ? currentQuestion.marks : 0} {currentQuestion && currentQuestion.marks === 1 ? 'Mark' : 'Marks'}
+                  </span>
                 </div>
-                <div className="bg-white bg-opacity-20 px-4 py-2 rounded-lg">
-                  <span className="text-xl font-bold">{currentQuestion.marks}</span>
-                  <span className="text-sm ml-1">mark{currentQuestion.marks !== 1 ? 's' : ''}</span>
-                </div>
-              </div>
-              <div className="mt-4 bg-white bg-opacity-20 rounded-full h-2">
-                <div
-                  className="bg-white h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${((currentQuestionIndex + 1) / totalQuestions) * 100}%` }}
-                />
-              </div>
-            </div>
 
-            <div className="p-8">
-              <div className="mb-8">
-                <h3 className="text-xl text-gray-900 mb-6 leading-relaxed font-medium">
-                  {currentQuestion.questionText}
+                <h3 className="text-lg font-medium text-gray-900 mb-6 leading-relaxed">
+                  {currentQuestion ? currentQuestion.questionText : 'Question not available'}
                 </h3>
-
-                {currentQuestion.questionImageUrl && (
+                {currentQuestion?.questionImageUrl && (
                   <div className="mb-6">
                     <img
                       src={currentQuestion.questionImageUrl}
                       alt="Question"
-                      className="max-w-full h-auto rounded-lg border-2 border-gray-200 shadow-sm"
+                      className="max-w-full h-auto rounded-lg border shadow-sm"
                       style={{ maxHeight: '400px' }}
                     />
                   </div>
                 )}
 
-                <div className="space-y-4">
-                  {Object.entries(currentQuestion.options).map(([key, value]) => (
+                <div className="space-y-3">
+                  {currentQuestion && Object.entries(currentQuestion.options).map(([key, value]) => (
                     <label
                       key={key}
-                      className={`flex items-start gap-4 p-5 border-2 rounded-xl cursor-pointer transition-all ${
+                      className={`flex items-start gap-4 p-4 border-2 rounded-lg cursor-pointer transition-all ${
                         answers[currentQuestion._id] === key
-                          ? 'border-blue-600 bg-blue-50 shadow-md'
+                          ? 'border-blue-500 bg-blue-50 shadow-md'
                           : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
                       }`}
                     >
@@ -403,20 +633,18 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
                         name={`question-${currentQuestion._id}`}
                         value={key}
                         checked={answers[currentQuestion._id] === key}
-                        onChange={(e) => handleAnswerSelect(currentQuestion._id, e.target.value)}
+                        onChange={(e) => handleAnswerChange(currentQuestion._id, e.target.value)}
                         className="mt-1 w-5 h-5 text-blue-600 focus:ring-2 focus:ring-blue-500"
                       />
                       <div className="flex-1">
-                        <div className="flex items-start">
-                          <span className="font-bold text-gray-900 text-lg mr-3">{key}.</span>
-                          <span className="text-gray-800 text-base leading-relaxed">{value}</span>
-                        </div>
+                        <span className="font-semibold text-gray-900 mr-2">{key}.</span>
+                        <span className="text-gray-700">{value}</span>
                         {currentQuestion.optionImages?.[key as keyof typeof currentQuestion.optionImages] && (
                           <img
                             src={currentQuestion.optionImages[key as keyof typeof currentQuestion.optionImages]}
                             alt={`Option ${key}`}
-                            className="mt-3 max-w-full h-auto rounded-lg border-2 border-gray-200"
-                            style={{ maxHeight: '250px' }}
+                            className="mt-2 max-w-full h-auto rounded border"
+                            style={{ maxHeight: '200px' }}
                           />
                         )}
                       </div>
@@ -425,83 +653,274 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
                 </div>
               </div>
 
-              <div className="border-t pt-6">
+            {hasMCQ && (
+              <div className="bg-white rounded-lg shadow-lg p-4">
                 <div className="flex justify-between items-center">
                   <button
-                    onClick={handlePrevious}
-                    disabled={currentQuestionIndex === 0}
-                    className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors"
+                    onClick={() => {
+                      if (currentQuestionInSection > 0) {
+                        handleNavigateToQuestion(currentQuestionInSection - 1);
+                      }
+                    }}
+                    disabled={!currentQuestion || currentQuestionInSection === 0}
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
                   >
+                    <ChevronLeft className="w-5 h-5" />
                     Previous
                   </button>
 
-                  <div className="text-center">
-                    <p className="text-sm text-gray-600">
-                      Question {currentQuestionIndex + 1} of {totalQuestions}
-                    </p>
-                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleMarkForReviewAndNext}
+                      disabled={!currentQuestion}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 disabled:opacity-60"
+                    >
+                      <Bookmark className="w-5 h-5" />
+                      Mark for Review & Next
+                    </button>
 
-                  <button
-                    onClick={handleNext}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 transition-colors"
-                  >
-                    {currentQuestionIndex === totalQuestions - 1 ? 'Finish' : 'Next'}
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
+                    <button
+                      onClick={handleClearResponse}
+                      disabled={!currentQuestion || !answers[currentQuestion._id]}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Clear Response
+                    </button>
+
+                    <button
+                      onClick={handleSaveAndNext}
+                      disabled={!currentQuestion}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium disabled:opacity-60"
+                    >
+                      Save & Next
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
-      </div>
+        )}
 
-      {showSubmitConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <AlertCircle className="text-orange-500 w-10 h-10" />
-              <h3 className="text-2xl font-bold text-gray-900">Submit Test?</h3>
+        {hasMCQ && showQuestionPalette && (
+          <div className="w-80 bg-white border-l shadow-lg overflow-y-auto sticky top-16 h-[calc(100vh-140px)]">
+            <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <List className="w-5 h-5 text-gray-600" />
+                <h3 className="font-semibold text-gray-900">Questions</h3>
+              </div>
+              <button
+                onClick={() => setShowQuestionPalette(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="mb-6 space-y-4">
-              <div className="bg-gray-50 p-5 rounded-lg space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-700 font-medium">Total Questions:</span>
-                  <span className="font-bold text-gray-900 text-lg">{totalQuestions}</span>
+            <div className="p-4">
+              <div className="mb-4 space-y-2 text-xs">
+                <div className="flex justify-between py-2 px-3 bg-green-50 rounded">
+                  <span>Answered</span>
+                  <span className="font-bold">{counts.answered}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-700 font-medium">Answered:</span>
-                  <span className="font-bold text-green-600 text-lg">{answeredCount}</span>
+                <div className="flex justify-between py-2 px-3 bg-red-50 rounded">
+                  <span>Not Answered</span>
+                  <span className="font-bold">{counts.notAnswered}</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-700 font-medium">Not Answered:</span>
-                  <span className="font-bold text-red-600 text-lg">{totalQuestions - answeredCount}</span>
+                <div className="flex justify-between py-2 px-3 bg-purple-50 rounded">
+                  <span>Marked for Review</span>
+                  <span className="font-bold">{counts.marked}</span>
                 </div>
-                <div className="flex justify-between items-center pt-3 border-t">
-                  <span className="text-gray-700 font-medium">Time Remaining:</span>
-                  <span className="font-bold text-blue-600 text-lg">{formatTime(timeLeft)}</span>
+                <div className="flex justify-between py-2 px-3 bg-gray-50 rounded">
+                  <span>Not Visited</span>
+                  <span className="font-bold">{counts.notVisited}</span>
                 </div>
               </div>
 
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
-                <p className="text-sm text-red-800 font-medium">
-                  Once submitted, you cannot change your answers.
-                </p>
+              {test.hasSections && test.sections ? (
+                <div className="space-y-4">
+                  {test.sections.map((section, sIndex) => (
+                    <div key={sIndex}>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2 pb-1 border-b">
+                        {section.sectionName}
+                      </h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {section.questions.map((q, qIndex) => {
+                          const status = getQuestionStatus(q);
+                          const isCurrent = sIndex === currentSectionIndex && qIndex === currentQuestionInSection;
+
+                          return (
+                            <button
+                              key={qIndex}
+                              onClick={() => handleNavigateToQuestion(qIndex, sIndex)}
+                              className={`w-10 h-10 rounded font-medium text-sm ${getStatusColor(status)} ${
+                                isCurrent ? 'ring-4 ring-yellow-400' : ''
+                              }`}
+                            >
+                              {qIndex + 1}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-5 gap-2">
+                  {currentQuestions.map((q, index) => {
+                    const status = getQuestionStatus(q);
+                    const isCurrent = index === currentQuestionInSection;
+
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => handleNavigateToQuestion(index)}
+                        className={`w-10 h-10 rounded font-medium text-sm ${getStatusColor(status)} ${
+                          isCurrent ? 'ring-4 ring-yellow-400' : ''
+                        }`}
+                      >
+                        {index + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {hasMCQ && !showQuestionPalette && (
+          <button
+            onClick={() => setShowQuestionPalette(true)}
+            className="fixed right-4 top-24 bg-blue-600 text-white p-3 rounded-l-lg shadow-lg hover:bg-blue-700"
+          >
+            <List className="w-6 h-6" />
+          </button>
+        )}
+
+        {/* 
+          Coding Section: Takes full width when mcqCompleted is true
+          Sequential flow: When MCQs submitted, this section expands to full screen
+          Width is responsive: full (flex-1) when MCQ done, or 75% when MCQ is active
+        */}
+        {test.hasCodingSection && test.codingQuestions && test.codingQuestions.length > 0 && (
+          <div className={`${mcqCompleted || !hasMCQ ? 'flex-1' : 'w-[75%]'} bg-white ${mcqCompleted || !hasMCQ ? '' : 'border-l'} flex flex-col h-full`}>
+            <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Code className="w-5 h-5 text-gray-600" />
+                <h3 className="font-semibold text-gray-900">Coding Questions</h3>
               </div>
+              {!mcqCompleted && hasMCQ && (
+                <div>
+                  <button
+                    onClick={() => { setStartCodingFlow(true); setShowConfirmSubmit(true); }}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
+                  >
+                    Start Coding (Submit MCQs)
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-2 space-y-1 border-b">
+                {test.codingQuestions.map((cq: any, idx: number) => (
+                  <div key={cq._id || cq.questionId || idx} className="p-2 border rounded hover:bg-gray-50">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-medium text-sm text-gray-800">{cq.title || cq.questionId || `Coding ${idx + 1}`}</div>
+                        <div className="text-xs text-gray-500">Points: {cq.points || cq.points === 0 ? cq.points : 100}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const id = cq._id || cq.questionId || cq.id;
+                            setSelectedCodingQuestionId(id);
+                          }}
+                          className={`px-3 py-1 ${selectedCodingQuestionId === (cq._id || cq.questionId || cq.id) 
+                            ? 'bg-green-600' 
+                            : 'bg-blue-600'} text-white rounded text-sm`}
+                        >
+                          {selectedCodingQuestionId === (cq._id || cq.questionId || cq.id) ? 'Selected' : 'Open'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedCodingQuestionId && (
+                <div ref={el => (codingInterfaceRef.current = el)} className="flex-1 border-t overflow-hidden">
+                  <div className="h-[calc(100vh-180px)] w-full">
+                    <CodingInterface
+                      questionId={selectedCodingQuestionId}
+                      fullscreen={mcqCompleted}
+                      isPractice={test.testType === 'Practice'}
+                      onSubmit={async (submissionId: string, score: number) => {
+                        // Optionally notify user and refresh state
+                        alert(`Coding submission ${submissionId} scored ${score}`);
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showConfirmSubmit && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
+              <div className="flex items-center gap-3 mb-6">
+              <AlertCircle className="text-orange-500 w-8 h-8" />
+              <h3 className="text-xl font-bold text-gray-900">
+                {startCodingFlow ? 'Submit MCQs & Start Coding?' : 'Submit Test?'}
+              </h3>
+            </div>
+
+            <div className="mb-6 space-y-3">
+              <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Answered:</span>
+                  <span className="font-bold text-green-600">{counts.answered}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Not Answered:</span>
+                  <span className="font-bold text-red-600">{counts.notAnswered}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Marked for Review:</span>
+                  <span className="font-bold text-purple-600">{counts.marked}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Not Visited:</span>
+                  <span className="font-bold text-gray-600">{counts.notVisited}</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t">
+                  <span className="text-gray-600">Time Remaining:</span>
+                  <span className="font-bold text-blue-600">{formatTime(currentTime)}</span>
+                </div>
+              </div>
+
+              <p className="text-sm text-red-600 font-medium">
+                {startCodingFlow ? 'This will submit your MCQ answers and open the coding section. You can continue coding; MCQ answers cannot be changed.' : '⚠️ Once submitted, you cannot change your answers.'}
+              </p>
             </div>
 
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setShowSubmitConfirm(false)}
+                onClick={() => { setShowConfirmSubmit(false); if (startCodingFlow) setStartCodingFlow(false); }}
                 disabled={submitting}
-                className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium transition-colors"
+                className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleSubmit()}
                 disabled={submitting}
-                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 font-medium flex items-center gap-2 transition-colors"
+                className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 font-medium flex items-center gap-2"
               >
                 {submitting ? (
                   <>
@@ -511,7 +930,7 @@ const CleanTestInterface: React.FC<CleanTestInterfaceProps> = ({
                 ) : (
                   <>
                     <CheckCircle className="w-5 h-5" />
-                    Submit Final
+                    {startCodingFlow ? 'Proceed & Start Coding' : 'Submit Final'}
                   </>
                 )}
               </button>
