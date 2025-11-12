@@ -61,6 +61,13 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
     fetchQuestion();
   }, [questionId]);
 
+  useEffect(() => {
+    if (question) {
+      const starterCode = getStarterCode(selectedLanguage, question);
+      setCode(starterCode);
+    }
+  }, [selectedLanguage]);
+
   // Restore autosaved code if present
   useEffect(() => {
     const key = `coding_autosave:${questionId}:${testAttemptId || 'default'}`;
@@ -110,28 +117,31 @@ const CodingInterface: React.FC<CodingInterfaceProps> = ({
       const questionData = response.data;
       setQuestion(questionData);
 
-      // Set default code for Python
-      setCode(`def solution(nums, target):
-    # Write your code here
-    hashmap = {}
-    for i, num in enumerate(nums):
-        complement = target - num
-        if complement in hashmap:
-            return [hashmap[complement], i]
-        hashmap[num] = i
-    return []
-
-# DO NOT MODIFY BELOW THIS LINE
-if __name__ == "__main__":
-    n = int(input())
-    nums = list(map(int, input().split()))
-    target = int(input())
-    result = solution(nums, target)
-    print(*result)`);
+      // Set empty starter code based on language
+      const starterCode = getStarterCode(selectedLanguage, questionData);
+      setCode(starterCode);
 
     } catch (error) {
       console.error('Error fetching question:', error);
       setOutput('Error fetching question. Please try again.');
+      alert('Failed to load coding question. Please try again or contact support.');
+    }
+  };
+
+  const getStarterCode = (language: string, question: CodingQuestion | null) => {
+    if (!question) return '';
+
+    switch (language.toLowerCase()) {
+      case 'python':
+        return `# ${question.title}\n# Write your solution here\n\n`;
+      case 'javascript':
+        return `// ${question.title}\n// Write your solution here\n\n`;
+      case 'java':
+        return `// ${question.title}\n// Write your solution here\n\npublic class Solution {\n    \n}\n`;
+      case 'cpp':
+        return `// ${question.title}\n// Write your solution here\n\n#include <iostream>\nusing namespace std;\n\n`;
+      default:
+        return `// ${question.title}\n// Write your solution here\n\n`;
     }
   };
 
@@ -239,8 +249,10 @@ if __name__ == "__main__":
 
   if (!question) {
     return (
-      <div className="flex justify-center items-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex flex-col justify-center items-center h-96 bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+        <p className="text-gray-600">Loading coding question...</p>
+        <p className="text-sm text-gray-500 mt-2">If this takes too long, the question may not exist in the database.</p>
       </div>
     );
   }

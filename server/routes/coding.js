@@ -425,35 +425,42 @@ async function runCodeInSandbox(code, language, input) {
 
         const jail = context.global;
         await jail.set('global', jail.derefInto());
-        await jail.set('_input', input);
 
         const outputLogs = [];
         await jail.set('_consoleLog', new ivm.Reference(function(...args) {
-          outputLogs.push(args.join(' '));
+          outputLogs.push(args.map(a => String(a)).join(' '));
         }));
 
+        const inputLines = input.split('\n');
+        await jail.set('_inputLines', JSON.stringify(inputLines));
+        await jail.set('_inputIndex', 0);
+
         const wrappedCode = `
-          const input = _input;
-          const console = { log: (...args) => _consoleLog.applySync(undefined, args) };
+          let _inputLines = JSON.parse(_inputLines);
+          let _inputIndex = 0;
+
+          const console = {
+            log: (...args) => _consoleLog.applySync(undefined, args)
+          };
+
+          const readline = () => {
+            if (_inputIndex < _inputLines.length) {
+              return _inputLines[_inputIndex++];
+            }
+            return '';
+          };
 
           ${code}
 
-          let result;
-          if (typeof solution === 'function') {
-            result = solution(input);
-          } else if (typeof main === 'function') {
-            result = main(input);
-          }
-
-          result !== undefined ? String(result) : '';
+          // Capture console output
+          '';
         `;
 
         try {
           const script = await isolate.compileScript(wrappedCode);
-          const result = await script.run(context, { timeout });
+          await script.run(context, { timeout });
 
-          const output = outputLogs.length > 0 ? outputLogs.join('\n') : String(result);
-
+          const output = outputLogs.join('\n');
           isolate.dispose();
           resolve(output);
         } catch (error) {
@@ -461,11 +468,45 @@ async function runCodeInSandbox(code, language, input) {
           reject(new Error(`Runtime Error: ${error.message}`));
         }
       } else if (language === 'python') {
-        resolve(`Python execution requires additional setup. Input: ${input}`);
+        // For Python, we'll use VM2 or similar for now
+        // This is a simplified version - for production, use proper sandboxing
+        const { VM } = require('vm2');
+        const vm = new VM({
+          timeout,
+          sandbox: {}
+        });
+
+        try {
+          // Python-like execution simulation
+          const pythonOutput = [];
+          const pythonCode = `
+            const input = ${JSON.stringify(input)};
+            const lines = input.split('\\n');
+            let lineIndex = 0;
+
+            function input() {
+              return lines[lineIndex++] || '';
+            }
+
+            function print(...args) {
+              pythonOutput.push(args.join(' '));
+            }
+
+            // User code would go here
+            // For now, return a placeholder
+            print("Python execution is not fully supported yet");
+
+            pythonOutput.join('\\n');
+          `;
+
+          resolve('Python execution requires Python runtime. Please use JavaScript for now.');
+        } catch (error) {
+          reject(new Error(`Python Error: ${error.message}`));
+        }
       } else if (language === 'java') {
-        resolve(`Java execution requires additional setup. Input: ${input}`);
+        resolve(`Java execution requires JDK runtime. Please use JavaScript for now.`);
       } else if (language === 'cpp') {
-        resolve(`C++ execution requires additional setup. Input: ${input}`);
+        resolve(`C++ execution requires C++ compiler. Please use JavaScript for now.`);
       } else {
         reject(new Error(`Language ${language} is not supported`));
       }
